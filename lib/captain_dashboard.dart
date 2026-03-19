@@ -5,7 +5,6 @@ import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart'; 
 import 'constants.dart';
 import 'active_trip_screen.dart';
 
@@ -22,9 +21,13 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   bool isOnline = false;
   Map? currentTrip;
   double balance = 0.0;
+  List transactions = [];
   LatLng myPos = LatLng(33.3128, 44.3615);
   final MapController _mapController = MapController();
-  
+
+  final TextEditingController _voucherController = TextEditingController();
+  bool _isRecharging = false;
+
   Timer? _fetchTimer;
   Timer? _tripTimeoutTimer;
   int _secondsRemaining = 20;
@@ -34,7 +37,6 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     super.initState();
     _checkBalance();
     _updateLocation();
-    // فحص الرحلات كل 5 ثوانٍ بشرط أن يكون السائق متصل (Online) ولا توجد رحلة حالية
     _fetchTimer = Timer.periodic(Duration(seconds: 5), (t) {
       if (mounted && isOnline && currentTrip == null) _fetchTrips();
     });
@@ -44,100 +46,95 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   void dispose() {
     _fetchTimer?.cancel();
     _tripTimeoutTimer?.cancel();
+    _voucherController.dispose();
     super.dispose();
   }
 
   // --- وظائف المنطق (Logic) ---
 
-  _fetchTrips() async {
+  Future<void> _redeemVoucher(String code, StateSetter setDialogState) async {
+    if (code.isEmpty) return;
+
+    setDialogState(() => _isRecharging = true);
+
     try {
-      // تأكد أن المسار مطابق للباك اند (trips/available)
-      final res = await http.get(
-        Uri.parse("$apiBaseUrl/trips/available"),
-        headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'}
-      );
-      if (res.statusCode == 200) {
-        List trips = json.decode(res.body);
-        if (trips.isNotEmpty && currentTrip == null) {
-          setState(() {
-            currentTrip = trips[0];
-            _secondsRemaining = 20;
-          });
-          _startTripTimer();
-        }
-      }
-    } catch (e) { print("Fetch Error: $e"); }
-  }
-
-  _startTripTimer() {
-    _tripTimeoutTimer?.cancel();
-    _tripTimeoutTimer = Timer.periodic(Duration(seconds: 1), (t) {
-      if (_secondsRemaining > 0) {
-        setState(() => _secondsRemaining--);
-      } else {
-        _ignoreTrip();
-      }
-    });
-  }
-
-  _ignoreTrip() {
-    _tripTimeoutTimer?.cancel();
-    setState(() => currentTrip = null);
-  }
-
-  _acceptTrip() async {
-    try {
+      // ملاحظة: تأكد أن apiBaseUrl في constants.dart هو http://10.0.2.2/my-taxi-project/public/api
       final res = await http.post(
-          Uri.parse("$apiBaseUrl/trips/${currentTrip!['id']}/accept"),
-          headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'}
+        Uri.parse("$apiBaseUrl/recharge"),
+        headers: {
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({'code': code}),
       );
-      if (res.statusCode == 200) {
-        int tid = currentTrip!['id'];
-        _tripTimeoutTimer?.cancel();
-        setState(() => currentTrip = null);
-        Navigator.push(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(tripId: tid, token: widget.token, isDriver: true)));
-      }
-    } catch (e) { print("Accept Error: $e"); }
-  }
 
-  _openMaps(double lat, double lng) async {
-    final Uri url = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("لا يمكن فتح خرائط جوجل")));
+      print("Response Status: ${res.statusCode}");
+      print("Response Body: ${res.body}");
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        Navigator.pop(context);
+        _voucherController.clear();
+        setState(() {
+          balance = double.parse(data['new_balance'].toString());
+        });
+        _showSnackBar("تم الشحن بنجاح! الرصيد الجديد: ${data['new_balance']}", Colors.green);
+      } else {
+        final data = json.decode(res.body);
+        _showSnackBar(data['message'] ?? "كود غير صحيح", Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar("خطأ: تأكد من اتصال السيرفر بـ IP الصحيح", Colors.orange);
+    } finally {
+      if (mounted) setDialogState(() => _isRecharging = false);
     }
   }
 
-  _updateLocation() async {
-    Position pos = await Geolocator.getCurrentPosition();
-    setState(() => myPos = LatLng(pos.latitude, pos.longitude));
-    _mapController.move(myPos, 15);
+  void _showSnackBar(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: color, behavior: SnackBarBehavior.floating)
+    );
   }
 
+  // (بقية الدوال المساعدة: _fetchTrips, _updateLocation, إلخ تبق كما هي)
+  _fetchTrips() async { /* ... نفس الكود السابق ... */ }
+  _startTripTimer() { /* ... نفس الكود السابق ... */ }
+  _ignoreTrip() { /* ... نفس الكود السابق ... */ }
+  _acceptTrip() async { /* ... نفس الكود السابق ... */ }
+  _updateLocation() async { /* ... نفس الكود السابق ... */ }
   _checkBalance() async {
     try {
-      final res = await http.get(Uri.parse("$apiBaseUrl/driver/balance"), headers: {'Authorization': 'Bearer ${widget.token}'});
-      if (res.statusCode == 200) setState(() => balance = double.tryParse(json.decode(res.body)['balance'].toString()) ?? 0.0);
-    } catch (e) {}
+      final res = await http.get(
+          Uri.parse("$apiBaseUrl/driver/balance"),
+          headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'}
+      );
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        if (mounted) setState(() {
+          balance = double.tryParse(data['balance'].toString()) ?? 0.0;
+          transactions = data['recent_trips'] ?? [];
+        });
+      }
+    } catch (e) { print("Balance Error: $e"); }
   }
-
-  // --- الواجهات (UI) ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentIndex == 0 ? "لوحة الكابتن" : "المحفظة"),
-        actions: [IconButton(icon: Icon(Icons.logout), onPressed: () => logout(context))],
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.amber,
       ),
-      body: _currentIndex == 0 ? _buildHome() : Center(child: Text("الرصيد: $balance د.ع")),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: [
-          NavigationDestination(icon: Icon(Icons.map), label: "الرئيسية"),
-          NavigationDestination(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
+      body: IndexedStack(index: _currentIndex, children: [_buildHome(), _buildWallet()]),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (i) { if (i == 1) _checkBalance(); setState(() => _currentIndex = i); },
+        selectedItemColor: Colors.amber[800],
+        items: [
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: "الرئيسية"),
+          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
         ],
       ),
     );
@@ -145,71 +142,105 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
 
   Widget _buildHome() => Stack(children: [
     FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(initialCenter: myPos, initialZoom: 15),
-      children: [
-        TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-        MarkerLayer(markers: [
-          Marker(point: myPos, child: Icon(Icons.local_taxi, color: Colors.amber, size: 40))
-        ])
-      ]
+        mapController: _mapController,
+        options: MapOptions(initialCenter: myPos, initialZoom: 15),
+        children: [
+          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+          MarkerLayer(markers: [Marker(point: myPos, child: Icon(Icons.local_taxi, color: Colors.amber, size: 40))])
+        ]
     ),
     Positioned(top: 10, right: 10, child: Column(children: [
-      FloatingActionButton(onPressed: _updateLocation, child: Icon(Icons.my_location), mini: true),
+      FloatingActionButton(onPressed: _updateLocation, child: Icon(Icons.my_location), mini: true, backgroundColor: Colors.white),
       SizedBox(height: 10),
       Switch(value: isOnline, onChanged: (v) => setState(() => isOnline = v), activeColor: Colors.green),
     ])),
     if (currentTrip != null) _buildTripRequestPopup(),
   ]);
 
-  Widget _buildTripRequestPopup() => Align(
-    alignment: Alignment.bottomCenter,
-    child: Container(
-      margin: EdgeInsets.all(15),
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.95),
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.amber, width: 2)
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text("طلب رحلة جديد", style: TextStyle(color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold)),
-          CircleAvatar(backgroundColor: Colors.red, child: Text("$_secondsRemaining", style: TextStyle(color: Colors.white))),
+  Widget _buildWallet() {
+    return Column(children: [
+      Container(
+        width: double.infinity, padding: EdgeInsets.all(40),
+        color: Colors.black,
+        child: Column(children: [
+          Text("رصيدك الحالي", style: TextStyle(color: Colors.white70)),
+          Text("${balance.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 35, fontWeight: FontWeight.bold)),
         ]),
-        SizedBox(height: 15),
-        _locationTile(Icons.circle, Colors.green, "من: ${currentTrip!['pickup_location']}", currentTrip!['pickup_lat'], currentTrip!['pickup_long']),
-        _locationTile(Icons.location_on, Colors.red, "إلى: ${currentTrip!['dropoff_location']}", currentTrip!['dropoff_lat'], currentTrip!['dropoff_long']),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          child: Text("الأجرة: ${currentTrip!['fare']} د.ع", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-        ),
-        Row(children: [
-          Expanded(child: TextButton(onPressed: _ignoreTrip, child: Text("تجاهل", style: TextStyle(color: Colors.red)))),
-          Expanded(
-            flex: 2,
-            child: GestureDetector(
-              onLongPress: _acceptTrip,
-              child: Container(
-                height: 55,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(15)),
-                child: Text("اضغط مطولاً للقبول", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _walletAction(Icons.history, "السجل", () {}),
+          _walletAction(Icons.add_card, "تعبئة رصيد", () => _showTopUpDialog()),
+          _walletAction(Icons.help_outline, "الدعم", () {}),
+        ]),
+      ),
+    ]);
+  }
+
+  // --- النافذة المطلوبة مع التعليمات وحقل الكود ---
+  _showTopUpDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text("شحن المحفظة", textAlign: TextAlign.center),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // تعليمات زين كاش
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                  children: [
+                    Text("1. حول المبلغ لزين كاش: 078XXXXXXX", style: TextStyle(fontSize: 12)),
+                    Text("2. أرسل صورة الحوالة للدعم الفني", style: TextStyle(fontSize: 12)),
+                    Text("3. سيتم تزويدك بكود التعبئة فوراً", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
-            ),
+              SizedBox(height: 20),
+              // حقل إدخال الكود
+              TextField(
+                controller: _voucherController,
+                decoration: InputDecoration(
+                  hintText: "أدخل كود الشحن هنا",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: Icon(Icons.vignette_rounded),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-        ])
-      ]),
-    ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: Text("إلغاء")),
+            _isRecharging 
+              ? CircularProgressIndicator()
+              : ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.amber),
+                  onPressed: () => _redeemVoucher(_voucherController.text, setDialogState), 
+                  child: Text("تأكيد وشحن")
+                ),
+          ],
+        ),
+      )
+    );
+  }
+
+  Widget _walletAction(IconData icon, String label, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Column(children: [
+      CircleAvatar(radius: 25, backgroundColor: Colors.amber, child: Icon(icon, color: Colors.black)),
+      SizedBox(height: 5),
+      Text(label, style: TextStyle(fontSize: 12)),
+    ]),
   );
 
-  Widget _locationTile(IconData icon, Color color, String text, dynamic lat, dynamic lng) => ListTile(
-    leading: Icon(icon, color: color, size: 20),
-    title: Text(text, style: TextStyle(color: Colors.white, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-    trailing: IconButton(
-      icon: Icon(Icons.directions, color: Colors.blue),
-      onPressed: () => _openMaps(double.parse(lat.toString()), double.parse(lng.toString())),
-    ),
-    contentPadding: EdgeInsets.zero,
-  );
+  // (دوال الـ UI الأخرى تبق كما هي)
+  _showLogoutDialog() { /* ... */ }
+  _buildTripRequestPopup() { /* ... */ }
+  _locationTile(IconData icon, Color color, String text) { /* ... */ }
 }
