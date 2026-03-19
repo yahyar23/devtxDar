@@ -6,9 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 
-// ملاحظة: تأكد من تغيير localhost إلى IP جهازك إذا كنت تفحص من موبايل حقيقي
+// ملاحظة: إذا كنت تستخدم المحاكي (Emulator) استخدم 10.0.2.2 بدلاً من localhost
 const String apiBaseUrl = "http://localhost/my-taxi-project/public/api";
 
 void main() => runApp(TaxiApp());
@@ -19,13 +18,18 @@ class TaxiApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'بغداد تاكسي',
-      theme: ThemeData(brightness: Brightness.dark, colorSchemeSeed: Colors.amber, useMaterial3: true),
+      theme: ThemeData(
+        brightness: Brightness.dark, 
+        colorSchemeSeed: Colors.amber, 
+        useMaterial3: true,
+        fontFamily: 'Arial'
+      ),
       home: SplashScreen(),
     );
   }
 }
 
-// --- 0. شاشة الفحص ---
+// --- 0. شاشة الفحص (Splash) ---
 class SplashScreen extends StatefulWidget {
   @override
   _SplashScreenState createState() => _SplashScreenState();
@@ -34,11 +38,15 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() { super.initState(); _checkStatus(); }
+  
   _checkStatus() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
     String? role = prefs.getString('role');
+    
     await Future.delayed(Duration(seconds: 2));
+    if (!mounted) return;
+
     if (token != null && role != null) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => 
         role == 'driver' ? CaptainDashboard(token: token) : CustomerDashboard(token: token)));
@@ -57,47 +65,134 @@ class WelcomeScreen extends StatelessWidget {
     Icon(Icons.local_taxi, size: 120, color: Colors.amber),
     Text("بغداد تاكسي", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
     SizedBox(height: 40),
-    _btn(context, "أنا زبون", Colors.white, () => _go(context, false)),
+    _btn(context, "أنا زبون", Colors.white, () => _go(context, 'customer')),
     SizedBox(height: 20),
-    _btn(context, "أنا كابتن", Colors.amber, () => _go(context, true)),
+    _btn(context, "أنا كابتن", Colors.amber, () => _go(context, 'driver')),
   ])));
-  _go(context, isDriver) => Navigator.push(context, MaterialPageRoute(builder: (c) => LoginScreen(isDriver: isDriver)));
+  
+  _go(context, role) => Navigator.push(context, MaterialPageRoute(builder: (c) => RegisterScreen(role: role)));
+  
   _btn(context, txt, col, tap) => ElevatedButton(onPressed: tap, child: Text(txt), style: ElevatedButton.styleFrom(backgroundColor: col, foregroundColor: Colors.black, minimumSize: Size(250, 60)));
 }
 
-// --- 2. شاشة تسجيل الدخول ---
-class LoginScreen extends StatefulWidget {
-  final bool isDriver;
-  LoginScreen({required this.isDriver});
+// --- 2. شاشة إنشاء حساب (مطابقة لجدول Users) ---
+class RegisterScreen extends StatefulWidget {
+  final String role; // 'driver' or 'customer'
+  RegisterScreen({required this.role});
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  _RegisterScreenState createState() => _RegisterScreenState();
 }
-class _LoginScreenState extends State<LoginScreen> {
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _name = TextEditingController();
   final _phone = TextEditingController();
   final _pass = TextEditingController();
-  _login() async {
+  final _email = TextEditingController(); // حقل اختياري موجود في جدولك
+
+  _register() async {
+    if (_name.text.isEmpty || _phone.text.isEmpty || _pass.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("يرجى ملء الحقول الأساسية")));
+      return;
+    }
+
     try {
-      final res = await http.post(Uri.parse("$apiBaseUrl/login"), body: {'phone': _phone.text, 'password': _pass.text});
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
+      // بناء البيانات بناءً على الـ Migration الخاص بك
+      Map<String, String> body = {
+        'name': _name.text,
+        'phone': _phone.text,
+        'password': _pass.text,
+        'role': widget.role, // driver, customer
+        'status': 'active',  // نرسلها active ليتجاوز الـ pending الافتراضي في الجدول
+        'balance': '0.00',
+      };
+      
+      if (_email.text.isNotEmpty) body['email'] = _email.text;
+
+      final res = await http.post(Uri.parse("$apiBaseUrl/register"), body: body);
+      final data = json.decode(res.body);
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', data['token']);
         await prefs.setString('role', data['user']['role']);
+        
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => 
+          widget.role == 'driver' ? CaptainDashboard(token: data['token']) : CustomerDashboard(token: data['token'])), (r) => false);
+      } else {
+        String msg = data['message'] ?? "خطأ في التسجيل";
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("فشل الاتصال: $e")));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.role == 'driver' ? "تسجيل كابتن جديد" : "تسجيل زبون جديد")),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(20),
+        child: Column(children: [
+          TextField(controller: _name, decoration: InputDecoration(labelText: "الاسم الكامل", prefixIcon: Icon(Icons.person))),
+          TextField(controller: _phone, decoration: InputDecoration(labelText: "رقم الهاتف (Unique)", prefixIcon: Icon(Icons.phone)), keyboardType: TextInputType.phone),
+          TextField(controller: _email, decoration: InputDecoration(labelText: "البريد الإلكتروني (اختياري)", prefixIcon: Icon(Icons.email))),
+          TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "كلمة السر", prefixIcon: Icon(Icons.lock))),
+          
+          SizedBox(height: 30),
+          ElevatedButton(onPressed: _register, child: Text("إنشاء الحساب"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber, foregroundColor: Colors.black)),
+          TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => LoginScreen())), child: Text("لديك حساب؟ سجل دخول"))
+        ]),
+      ),
+    );
+  }
+}
+
+// --- 3. شاشة تسجيل الدخول ---
+class LoginScreen extends StatefulWidget {
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _phone = TextEditingController();
+  final _pass = TextEditingController();
+
+  _login() async {
+    try {
+      final res = await http.post(Uri.parse("$apiBaseUrl/login"), body: {
+        'phone': _phone.text, 
+        'password': _pass.text
+      });
+      
+      final data = json.decode(res.body);
+      if (res.statusCode == 200) {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', data['token']);
+        await prefs.setString('role', data['user']['role']);
+        
+        if (!mounted) return;
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => 
           data['user']['role'] == 'driver' ? CaptainDashboard(token: data['token']) : CustomerDashboard(token: data['token'])), (r) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("رقم الهاتف أو كلمة السر غير صحيحة")));
       }
-    } catch (e) { print("Login Error: $e"); }
+    } catch (e) { 
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تعذر الاتصال بالسيرفر")));
+    }
   }
+
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(), body: Padding(padding: EdgeInsets.all(20), child: Column(children: [
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text("تسجيل الدخول")), body: Padding(padding: EdgeInsets.all(20), child: Column(children: [
     TextField(controller: _phone, decoration: InputDecoration(labelText: "رقم الهاتف"), keyboardType: TextInputType.phone),
     TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "كلمة السر")),
-    SizedBox(height: 20),
-    ElevatedButton(onPressed: _login, child: Text("دخول"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber))
+    SizedBox(height: 30),
+    ElevatedButton(onPressed: _login, child: Text("دخول"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber, foregroundColor: Colors.black))
   ])));
 }
 
-// --- 3. لوحة الكابتن ---
+// --- 4. لوحة الكابتن (Captain Dashboard) ---
 class CaptainDashboard extends StatefulWidget {
   final String token;
   CaptainDashboard({required this.token});
@@ -111,19 +206,25 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   double balance = 0.0;
   LatLng myPos = LatLng(33.3128, 44.3615); 
   final MapController _mapController = MapController();
+  Timer? _fetchTimer;
 
   @override
   void initState() {
     super.initState();
     _checkBalance();
     _updateLocation();
-    Timer.periodic(Duration(seconds: 5), (t) => _fetchTrips());
+    _fetchTimer = Timer.periodic(Duration(seconds: 5), (t) => _fetchTrips());
+  }
+
+  @override
+  void dispose() {
+    _fetchTimer?.cancel();
+    super.dispose();
   }
 
   _checkBalance() async {
     try {
-      // تصحيح الرابط من balnce إلى balance
-      final res = await http.get(Uri.parse("$apiBaseUrl/driver/balance"), headers: {'Authorization': 'Bearer ${widget.token}'});
+      final res = await http.get(Uri.parse("$apiBaseUrl/profile"), headers: {'Authorization': 'Bearer ${widget.token}'});
       if (res.statusCode == 200) {
         setState(() => balance = double.tryParse(json.decode(res.body)['balance'].toString()) ?? 0.0);
       }
@@ -131,28 +232,29 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   }
 
   _updateLocation() async {
-    LocationPermission permission = await Geolocator.requestPermission();
-    if (permission != LocationPermission.denied) {
-      Position pos = await Geolocator.getCurrentPosition();
+    try {
+      Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       setState(() => myPos = LatLng(pos.latitude, pos.longitude));
       _mapController.move(myPos, 15);
-    }
+    } catch (e) { print("Location Error: $e"); }
   }
 
   _fetchTrips() async {
     if (!isOnline || currentTrip != null) return;
-    final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"), headers: {'Authorization': 'Bearer ${widget.token}'});
-    if (res.statusCode == 200) {
-      List trips = json.decode(res.body);
-      if (trips.isNotEmpty) setState(() => currentTrip = trips[0]);
-    }
+    try {
+      final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"), headers: {'Authorization': 'Bearer ${widget.token}'});
+      if (res.statusCode == 200) {
+        List trips = json.decode(res.body);
+        if (trips.isNotEmpty) setState(() => currentTrip = trips[0]);
+      }
+    } catch (e) { print("Fetch Trips Error: $e"); }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("الرصيد: ${balance.toInt()} د.ع"), actions: [
-        Switch(value: isOnline, onChanged: (v) => setState(() => isOnline = v))
+        Switch(value: isOnline, activeColor: Colors.green, onChanged: (v) => setState(() => isOnline = v))
       ]),
       body: Stack(children: [
         FlutterMap(mapController: _mapController, options: MapOptions(initialCenter: myPos, initialZoom: 15), children: [
@@ -166,25 +268,30 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   }
 
   Widget _buildTripRequest() => Align(alignment: Alignment.bottomCenter, child: Container(
-    margin: EdgeInsets.all(15), padding: EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.amber)),
+    margin: EdgeInsets.all(15), padding: EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.amber, width: 2)),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Text("طلب رحلة جديد", style: TextStyle(color: Colors.amber, fontSize: 18)),
-      Text("من: ${currentTrip!['pickup_location'] ?? 'غير محدد'}"),
-      Text("السعر: ${currentTrip!['fare'] ?? '0'} د.ع"),
+      Text("طلب رحلة جديد 🚕", style: TextStyle(color: Colors.amber, fontSize: 18, fontWeight: FontWeight.bold)),
       SizedBox(height: 10),
-      ElevatedButton(onPressed: () async {
-        final res = await http.post(Uri.parse("$apiBaseUrl/trips/${currentTrip!['id']}/accept"), headers: {'Authorization': 'Bearer ${widget.token}'});
-        if (res.statusCode == 200) {
-          int tid = currentTrip!['id'];
-          setState(() => currentTrip = null);
-          Navigator.push(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(tripId: tid, token: widget.token, isDriver: true)));
-        }
-      }, child: Text("قبول الرحلة"))
+      Text("من: ${currentTrip!['pickup_location']}"),
+      Text("السعر: ${currentTrip!['fare']} د.ع", style: TextStyle(fontSize: 16, color: Colors.greenAccent)),
+      SizedBox(height: 15),
+      ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black, minimumSize: Size(double.infinity, 50)),
+        onPressed: () async {
+          final res = await http.post(Uri.parse("$apiBaseUrl/trips/${currentTrip!['id']}/accept"), headers: {'Authorization': 'Bearer ${widget.token}'});
+          if (res.statusCode == 200) {
+            int tid = currentTrip!['id'];
+            setState(() => currentTrip = null);
+            if (!mounted) return;
+            Navigator.push(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(tripId: tid, token: widget.token, isDriver: true)));
+          }
+        }, child: Text("قبول الرحلة")
+      )
     ]),
   ));
 }
 
-// --- 4. لوحة الزبون ---
+// --- 5. لوحة الزبون (Customer Dashboard) ---
 class CustomerDashboard extends StatefulWidget {
   final String token;
   CustomerDashboard({required this.token});
@@ -194,19 +301,20 @@ class CustomerDashboard extends StatefulWidget {
 
 class _CustomerDashboardState extends State<CustomerDashboard> {
   final _from = TextEditingController();
-  final _to = TextEditingController();
   LatLng? pickup;
   LatLng? dropoff;
   int fare = 0;
   final MapController _mapController = MapController();
 
   _setCurrentLocation() async {
-    Position pos = await Geolocator.getCurrentPosition();
-    setState(() {
-      pickup = LatLng(pos.latitude, pos.longitude);
-      _from.text = "موقعي الحالي";
-    });
-    _mapController.move(pickup!, 15);
+    try {
+      Position pos = await Geolocator.getCurrentPosition();
+      setState(() {
+        pickup = LatLng(pos.latitude, pos.longitude);
+        _from.text = "موقعي الحالي";
+      });
+      _mapController.move(pickup!, 15);
+    } catch (e) { print(e); }
   }
 
   _calculateFare() {
@@ -219,6 +327,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: Text("اطلب تاكسي")),
       body: Column(children: [
         Expanded(child: Stack(children: [
           FlutterMap(mapController: _mapController, options: MapOptions(initialCenter: LatLng(33.3128, 44.3615), initialZoom: 13, onTap: (p, l) {
@@ -231,13 +340,15 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               if (dropoff != null) Marker(point: dropoff!, child: Icon(Icons.location_on, color: Colors.red, size: 40)),
             ])
           ]),
-          Positioned(top: 50, right: 20, child: FloatingActionButton(onPressed: _setCurrentLocation, child: Icon(Icons.my_location), mini: true))
+          Positioned(top: 20, right: 20, child: FloatingActionButton(onPressed: _setCurrentLocation, child: Icon(Icons.my_location), mini: true))
         ])),
-        Container(padding: EdgeInsets.all(20), child: Column(children: [
-          TextField(controller: _from, decoration: InputDecoration(hintText: "موقع الانطلاق")),
-          TextField(controller: _to, decoration: InputDecoration(hintText: "اضغط الخريطة لتحديد الوجهة")),
-          if (fare > 0) Text("السعر: $fare د.ع", style: TextStyle(fontSize: 20, color: Colors.amber)),
-          ElevatedButton(onPressed: fare > 0 ? _request : null, child: Text("تأكيد الطلب"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber, foregroundColor: Colors.black))
+        Container(padding: EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.vertical(top: Radius.circular(20))), child: Column(children: [
+          TextField(controller: _from, decoration: InputDecoration(hintText: "موقع الانطلاق", prefixIcon: Icon(Icons.circle, size: 12, color: Colors.blue))),
+          if (fare > 0) Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text("التكلفة التقديرية: $fare د.ع", style: TextStyle(fontSize: 20, color: Colors.amber, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(onPressed: fare > 0 ? _request : null, child: Text("تأكيد الطلب الآن"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 55), backgroundColor: Colors.amber, foregroundColor: Colors.black))
         ]))
       ]),
     );
@@ -249,9 +360,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       'pickup_lat': pickup!.latitude.toString(), 'pickup_long': pickup!.longitude.toString(),
       'dropoff_lat': dropoff!.latitude.toString(), 'dropoff_long': dropoff!.longitude.toString(),
     });
-    if (res.statusCode == 201) {
-       _wait(json.decode(res.body)['id']);
-    }
+    if (res.statusCode == 201) _wait(json.decode(res.body)['id']);
   }
 
   _wait(int id) {
@@ -266,7 +375,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   }
 }
 
-// --- 5. شاشة الرحلة النشطة (المصححة) ---
+// --- 6. شاشة الرحلة النشطة ---
 class ActiveTripScreen extends StatefulWidget {
   final int tripId;
   final String token;
@@ -279,9 +388,17 @@ class ActiveTripScreen extends StatefulWidget {
 class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Map? trip;
   String status = "accepted";
+  Timer? _refreshTimer;
 
   @override
-  void initState() { super.initState(); _fetch(); }
+  void initState() { 
+    super.initState(); 
+    _fetch(); 
+    _refreshTimer = Timer.periodic(Duration(seconds: 5), (t) => _fetch());
+  }
+
+  @override
+  void dispose() { _refreshTimer?.cancel(); super.dispose(); }
 
   _fetch() async {
     try {
@@ -291,9 +408,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           trip = json.decode(res.body);
           status = trip!['status'] ?? "accepted";
         });
-        if (!widget.isDriver && status != 'completed') Future.delayed(Duration(seconds: 5), () => _fetch());
       }
-    } catch (e) { print("Fetch Trip Error: $e"); }
+    } catch (e) { print(e); }
   }
 
   _update(String s) async {
@@ -303,54 +419,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // حل مشكلة Null value: نضع واجهة انتظار حتى تكتمل البيانات
     if (trip == null) return Scaffold(body: Center(child: CircularProgressIndicator()));
-
-    // استخدام tryParse لتجنب الخطأ في حال كانت الإحداثيات فارغة
-    double lat = double.tryParse(trip!['pickup_lat'].toString()) ?? 33.3128;
-    double lng = double.tryParse(trip!['pickup_long'].toString()) ?? 44.3615;
-
     return Scaffold(
-      body: Stack(children: [
-        FlutterMap(options: MapOptions(initialCenter: LatLng(lat, lng), initialZoom: 15), children: [
-          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-          MarkerLayer(markers: [Marker(point: LatLng(lat, lng), child: Icon(Icons.person_pin_circle, color: Colors.blue, size: 40))])
-        ]),
-        Align(alignment: Alignment.bottomCenter, child: Container(
-          padding: EdgeInsets.all(25), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // حماية الأسماء من الـ Null
-            Text(widget.isDriver ? "الزبون: ${trip!['customer']?['name'] ?? 'جارِ التحميل...'}" : "الكابتن: ${trip!['driver']?['name'] ?? 'جارِ التحميل...'}", style: TextStyle(fontSize: 20, color: Colors.amber)),
-            Text("المبلغ: ${trip!['fare'] ?? '0'} د.ع"),
-            SizedBox(height: 20),
-            if (widget.isDriver) ...[
-               if (status == "accepted") _btn("وصلت لنقطة الانطلاق", () => _update("arrived")),
-               if (status == "arrived") _btn("ركب الزبون", () => _update("picked_up")),
-               if (status == "picked_up") _btn("إتمام الرحلة", () {
-                  // نافذة إدخال المبلغ النهائي
-                  _showFinishDialog();
-               }, color: Colors.green),
-            ] else ...[
-               Text(status == "arrived" ? "الكابتن وصل!" : status == "picked_up" ? "أنت في الرحلة الآن" : "الكابتن في الطريق"),
-               if (status == "completed") _btn("شكراً لك", () => Navigator.pop(context))
-            ]
-          ]),
-        ))
-      ]),
+      appBar: AppBar(title: Text("الرحلة الحالية")),
+      body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Text("حالة الرحلة: $status", style: TextStyle(fontSize: 24, color: Colors.amber)),
+        SizedBox(height: 20),
+        if (widget.isDriver && status != 'completed') 
+          ElevatedButton(onPressed: () => _update('completed'), child: Text("إنهاء الرحلة"))
+        else if (status == 'completed')
+          ElevatedButton(onPressed: () => Navigator.pop(context), child: Text("العودة"))
+      ])),
     );
   }
-
-  _showFinishDialog() {
-    final c = TextEditingController();
-    showDialog(context: context, builder: (d) => AlertDialog(
-      title: Text("إتمام الرحلة"),
-      content: TextField(controller: c, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "المبلغ المستلم")),
-      actions: [TextButton(onPressed: () async {
-        await http.post(Uri.parse("$apiBaseUrl/trips/${widget.tripId}/finish"), body: {'amount': c.text}, headers: {'Authorization': 'Bearer ${widget.token}'});
-        Navigator.pop(d); Navigator.pop(context);
-      }, child: Text("تأكيد"))],
-    ));
-  }
-
-  _btn(t, f, {Color color = Colors.amber}) => ElevatedButton(onPressed: f, child: Text(t), style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.black, minimumSize: Size(double.infinity, 55)));
 }
