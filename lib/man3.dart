@@ -107,12 +107,71 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text("تسجيل الدخول")), body: Padding(padding: EdgeInsets.all(20), child: Column(children: [
-    TextField(controller: _phone, decoration: InputDecoration(labelText: "رقم الهاتف"), keyboardType: TextInputType.phone),
-    TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "كلمة السر")),
-    SizedBox(height: 20),
-    ElevatedButton(onPressed: _login, child: Text("دخول"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber))
-  ])));
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text("تسجيل الدخول")), 
+    body: Padding(padding: EdgeInsets.all(20), child: Column(children: [
+      TextField(controller: _phone, decoration: InputDecoration(labelText: "رقم الهاتف"), keyboardType: TextInputType.phone),
+      TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "كلمة السر")),
+      SizedBox(height: 20),
+      ElevatedButton(onPressed: _login, child: Text("دخول"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.amber)),
+      TextButton(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => RegisterScreen(isDriver: widget.isDriver))),
+        child: Text("ليس لديك حساب؟ سجل الآن", style: TextStyle(color: Colors.amber))
+      )
+    ])));
+}
+
+// --- 2.1 شاشة إنشاء الحساب (الجديدة) ---
+class RegisterScreen extends StatefulWidget {
+  final bool isDriver;
+  RegisterScreen({required this.isDriver});
+  @override
+  _RegisterScreenState createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _pass = TextEditingController();
+  final _carInfo = TextEditingController(); // خاص بالسائق
+
+  _register() async {
+    try {
+      Map<String, String> data = {
+        'name': _name.text,
+        'phone': _phone.text,
+        'password': _pass.text,
+        'role': widget.isDriver ? 'driver' : 'customer',
+      };
+      if (widget.isDriver) data['car_info'] = _carInfo.text;
+
+      final res = await http.post(
+        Uri.parse("$apiBaseUrl/register"), 
+        headers: {'Accept': 'application/json'},
+        body: data
+      );
+
+      if (res.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تم إنشاء الحساب بنجاح! سجل دخولك الآن")));
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("فشل التسجيل: تأكد من المدخلات")));
+      }
+    } catch (e) { print("Register Error: $e"); }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.isDriver ? "تسجيل كابتن جديد" : "تسجيل زبون جديد")),
+    body: SingleChildScrollView(padding: EdgeInsets.all(20), child: Column(children: [
+      TextField(controller: _name, decoration: InputDecoration(labelText: "الاسم الكامل")),
+      TextField(controller: _phone, decoration: InputDecoration(labelText: "رقم الهاتف"), keyboardType: TextInputType.phone),
+      TextField(controller: _pass, obscureText: true, decoration: InputDecoration(labelText: "كلمة السر")),
+      if (widget.isDriver) TextField(controller: _carInfo, decoration: InputDecoration(labelText: "معلومات السيارة (النوع واللوحة)")),
+      SizedBox(height: 30),
+      ElevatedButton(onPressed: _register, child: Text("إنشاء الحساب"), style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 55), backgroundColor: Colors.amber, foregroundColor: Colors.black))
+    ])),
+  );
 }
 
 // --- 3. لوحة الكابتن (مع Nav Bar و شحن الرصيد) ---
