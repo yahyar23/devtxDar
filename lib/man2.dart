@@ -6,7 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'constants.dart';
-import 'active_trip_screen.dart';
+import 'active_trip_screen1.dart';
 
 class CaptainDashboard extends StatefulWidget {
   final String token;
