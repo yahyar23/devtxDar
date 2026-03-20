@@ -193,10 +193,10 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
               // تعليمات زين كاش
               Container(
                 padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(color: const Color.fromARGB(255, 1, 9, 15), borderRadius: BorderRadius.circular(12)),
                 child: Column(
                   children: [
-                    Text("1. حول المبلغ لزين كاش: 078XXXXXXX", style: TextStyle(fontSize: 12)),
+                    Text("1. حول المبلغ لزين كاش: 07713072470", style: TextStyle(fontSize: 12)),
                     Text("2. أرسل صورة الحوالة للدعم الفني", style: TextStyle(fontSize: 12)),
                     Text("3. سيتم تزويدك بكود التعبئة فوراً", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   ],
