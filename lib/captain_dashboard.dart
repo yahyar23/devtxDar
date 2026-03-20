@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // مكتبة التخزين
 import 'constants.dart';
 import 'active_trip_screen.dart';
 
@@ -47,6 +48,17 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     _fetchTimer?.cancel();
     _voucherController.dispose();
     super.dispose();
+  }
+
+  // --- وظيفة تسجيل الخروج ---
+  Future<void> _logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // مسح كل البيانات المخزنة (التوكن والاسم وغيرها)
+    
+    if (mounted) {
+      // العودة لشاشة الترحيب وحذف كل الصفحات السابقة من الذاكرة
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    }
   }
 
   // --- 1. وظيفة شحن الرصيد (Logic) ---
@@ -153,6 +165,25 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
       appBar: AppBar(
         title: Text(_currentIndex == 0 ? "لوحة الكابتن" : "المحفظة"),
         backgroundColor: Colors.black, foregroundColor: Colors.amber,
+        actions: [
+          // إضافة زر تسجيل الخروج هنا
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: Text("تسجيل الخروج"),
+                  content: Text("هل أنت متأكد من رغبتك في تسجيل الخروج؟"),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(c), child: Text("إلغاء")),
+                    TextButton(onPressed: _logout, child: Text("خروج", style: TextStyle(color: Colors.red))),
+                  ],
+                )
+              );
+            },
+          ),
+        ],
       ),
       body: IndexedStack(index: _currentIndex, children: [_buildHome(), _buildWallet()]),
       bottomNavigationBar: BottomNavigationBar(
