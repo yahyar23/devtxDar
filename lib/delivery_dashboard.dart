@@ -369,10 +369,10 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     );
   }
 
-  Widget _buildOrdersSlider() => Align(
+Widget _buildOrdersSlider() => Align(
     alignment: Alignment.bottomCenter,
     child: Container(
-      height: 320, 
+      height: 400, // زدنا الارتفاع هنا لتجنب الشريط الأصفر
       child: PageView.builder(
         controller: _orderPageController,
         itemCount: availableOrders.length,
@@ -380,48 +380,95 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
       ),
     ),
   );
+Widget _buildOrderCard(Map order) {
+  int timeLeft = 20 - DateTime.now().difference(DateTime.parse(order['received_at'])).inSeconds;
+  if (timeLeft < 0) timeLeft = 0;
 
-  Widget _buildOrderCard(Map order) {
-    int timeLeft = 20 - DateTime.now().difference(DateTime.parse(order['received_at'])).inSeconds;
-    if (timeLeft < 0) timeLeft = 0;
+  return Container(
+    // رفعنا الكارد 40 بكسل عن الأسفل مع ضمان عدم تجاوزه للمساحة المتاحة
+    margin: EdgeInsets.only(left: 10, right: 10, bottom: 40, top: 5), 
+    padding: EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: Color(0xFF121212), // أسود عميق
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.orangeAccent.withOpacity(0.8), width: 1.2),
+      boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 10)],
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min, // مهم جداً لعدم التمدد الزائد
+      children: [
+        // العنوان والوقت
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("📦 طلب جديد", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text("$timeLeft ثانية", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        SizedBox(height: 10),
+        
+        // المواقع (تصميم سطر واحد لكل موقع لتقليل الطول)
+        _orderRow(Icons.store, "من: ${order['pickup_location']}", Colors.green,),
+        SizedBox(height: 4),
+        _orderRow(Icons.location_on, "إلى: ${order['dropoff_location']}", Colors.redAccent,),
+        
+        Divider(color: Colors.white12, height: 15),
 
-    return Container(
-      margin: EdgeInsets.all(12),
-      padding: EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.95),
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.orangeAccent, width: 1.5),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text("📦 طلب توصيل جديد", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 18)),
-          CircleAvatar(radius: 16, backgroundColor: Colors.red, child: Text("$timeLeft", style: TextStyle(color: Colors.white, fontSize: 13))),
-        ]),
-        Divider(color: Colors.white24, height: 20),
-        _orderRow(Icons.store, "من: ${order['pickup_location']}", Colors.green),
-        SizedBox(height: 8),
-        _orderRow(Icons.person_pin_circle, "إلى: ${order['dropoff_location']}", Colors.red),
-        SizedBox(height: 12),
-        Text("أجرة التوصيل: ${order['fare']} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 20, fontWeight: FontWeight.bold)),
-        Spacer(),
-        Row(children: [
-          Expanded(child: TextButton(onPressed: () => setState(() => availableOrders.remove(order)), child: Text("تجاهل", style: TextStyle(color: Colors.white70)))),
-          SizedBox(width: 10),
-          Expanded(
-            child: GestureDetector(
-              onLongPress: () => _acceptOrder(order),
+        // تفاصيل الشحنة (تصميم مدمج جداً)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("البضاعة/القطع", style: TextStyle(color: Colors.white54, fontSize: 10)),
+              Text("${order['item_type']} (${order['items_count']})", style: TextStyle(color: Colors.white, fontSize: 12)),
+            ]),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text("المطلوب تحصيله", style: TextStyle(color: Colors.white54, fontSize: 10)),
+              Text("${order['item_price']} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+            ]),
+          ],
+        ),
+
+        SizedBox(height: 15),
+
+        // الأزرار والأجرة
+        Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("ربحك", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                Text("${order['fare']} د.ع", style: TextStyle(color: Colors.orangeAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            Spacer(),
+            // زر التجاهل
+            TextButton(
+              onPressed: () => setState(() => availableOrders.remove(order)),
+              child: Text("تجاهل", style: TextStyle(color: Colors.white38, fontSize: 12)),
+            ),
+            SizedBox(width: 8),
+            // زر القبول
+            GestureDetector(
+              onLongPress: () {
+                Feedback.forLongPress(context);
+                _acceptOrder(order);
+              },
               child: Container(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(color: Colors.orangeAccent, borderRadius: BorderRadius.circular(12)),
-                child: Center(child: Text("استلام الطلب (مطول)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black))),
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [Colors.orangeAccent, Colors.orange]),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text("قبول (مطول)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 13)),
               ),
             ),
-          ),
-        ])
-      ]),
-    );
-  }
+          ],
+        )
+      ],
+    ),
+  );
+}
 
   Widget _orderRow(IconData icon, String text, Color color) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Icon(icon, color: color, size: 20),
