@@ -6,23 +6,28 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'constants.dart';
-import 'active_trip_screen1.dart';
+import 'active_delivery_screen.dart'; 
 
-class CustomerDashboard extends StatefulWidget {
+class StoreDashboard extends StatefulWidget {
   final String token;
-  CustomerDashboard({required this.token});
+  StoreDashboard({required this.token});
 
   @override
-  _CustomerDashboardState createState() => _CustomerDashboardState();
+  _StoreDashboardState createState() => _StoreDashboardState();
 }
 
-class _CustomerDashboardState extends State<CustomerDashboard> {
-  final _fromController = TextEditingController();
-  final _toController = TextEditingController();
+class _StoreDashboardState extends State<StoreDashboard> {
+  final _customerNameController = TextEditingController();
+  final _customerPhoneController = TextEditingController();
+  final _itemsCountController = TextEditingController();
+  final _storeLocationController = TextEditingController(); 
+  final _customerAddressController = TextEditingController(); 
+  final _itemTypeController = TextEditingController(); 
+  final _itemPriceController = TextEditingController(); 
   
-  LatLng? pickup;
-  LatLng? dropoff;
-  int fare = 0;
+  LatLng? storeLatLng;
+  LatLng? customerLatLng;
+  int deliveryFare = 0;
   final MapController _mapController = MapController();
   
   List _suggestions = []; 
@@ -32,25 +37,27 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _setCurrentLocation();
+      _setStoreCurrentLocation();
     });
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
-    _fromController.dispose();
-    _toController.dispose();
+    _customerNameController.dispose();
+    _customerPhoneController.dispose();
+    _storeLocationController.dispose();
+    _customerAddressController.dispose();
     super.dispose();
   }
 
-  _searchLocation(String query) async {
+  _searchCustomerLocation(String query) async {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 600), () async {
       if (query.length < 3) return;
       final url = "https://nominatim.openstreetmap.org/search?q=$query, Baghdad, Iraq&format=json&addressdetails=1&limit=5";
       try {
-        final res = await http.get(Uri.parse(url), headers: {'User-Agent': 'BaghdadTaxiApp'});
+        final res = await http.get(Uri.parse(url), headers: {'User-Agent': 'BaghdadDeliveryApp'});
         if (res.statusCode == 200 && mounted) {
           setState(() => _suggestions = json.decode(res.body));
         }
@@ -58,77 +65,89 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     });
   }
 
-  _getAddressFromLatLng(LatLng point, bool isPickup) async {
+  _getAddressFromLatLng(LatLng point, bool isStore) async {
     final url = "https://nominatim.openstreetmap.org/reverse?lat=${point.latitude}&lon=${point.longitude}&format=json&addressdetails=1";
     try {
-      final res = await http.get(Uri.parse(url), headers: {'User-Agent': 'BaghdadTaxiApp'});
+      final res = await http.get(Uri.parse(url), headers: {'User-Agent': 'BaghdadDeliveryApp'});
       if (res.statusCode == 200 && mounted) {
         final data = json.decode(res.body);
         final addr = data['address'];
         String neighborhood = addr['neighbourhood'] ?? addr['suburb'] ?? addr['residential'] ?? "منطقة مجهولة";
         String road = addr['road'] ?? "شارع فرعي";
-        String finalTitle = "$neighborhood - بالقرب من $road";
+        String finalTitle = "$neighborhood - $road";
 
         setState(() {
-          if (isPickup) {
-            _fromController.text = finalTitle;
-            pickup = point;
+          if (isStore) {
+            _storeLocationController.text = finalTitle;
+            storeLatLng = point;
           } else {
-            _toController.text = finalTitle;
-            dropoff = point;
+            _customerAddressController.text = finalTitle;
+            customerLatLng = point;
           }
         });
-        _calculateFare();
+        _calculateDeliveryFare();
       }
     } catch (e) { print("Geocoding Error: $e"); }
   }
 
-  _setCurrentLocation() async {
+  _setStoreCurrentLocation() async {
     try {
       Position pos = await Geolocator.getCurrentPosition();
       LatLng myLoc = LatLng(pos.latitude, pos.longitude);
       _getAddressFromLatLng(myLoc, true);
-      if (mounted) {
-        try { _mapController.move(myLoc, 15); } catch (e) {}
-      }
+      _mapController.move(myLoc, 15);
     } catch (e) { print("Location Error: $e"); }
   }
 
-  _calculateFare() {
-    if (pickup != null && dropoff != null) {
+  _calculateDeliveryFare() {
+    if (storeLatLng != null && customerLatLng != null) {
       double dist = Geolocator.distanceBetween(
-        pickup!.latitude, pickup!.longitude, 
-        dropoff!.latitude, dropoff!.longitude
+        storeLatLng!.latitude, storeLatLng!.longitude, 
+        customerLatLng!.latitude, customerLatLng!.longitude
       ) / 1000;
-      setState(() => fare = (2000 + (dist * 850)).round());
+      setState(() => deliveryFare = (3000 + (dist * 500)).round());
     }
   }
 
-  _request() async {
+  _sendDeliveryOrder() async {
+    if (_customerNameController.text.isEmpty || _customerPhoneController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("يرجى إدخال بيانات الزبون")));
+      return;
+    }
+
     try {
       final res = await http.post(
         Uri.parse("$apiBaseUrl/trips/create"), 
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'}, 
         body: {
-          'pickup_location': _fromController.text, 
-          'dropoff_location': _toController.text, 
-          'fare': fare.toString(),
-          'pickup_lat': pickup!.latitude.toString(), 
-          'pickup_long': pickup!.longitude.toString(),
-          'dropoff_lat': dropoff!.latitude.toString(), 
-          'dropoff_long': dropoff!.longitude.toString(),
-        }
+    // تم تغييرها لتطابق receiver_name في قاعدة البيانات
+    'receiver_name': _customerNameController.text, 
+    
+    // تم تغييرها لتطابق receiver_phone في قاعدة البيانات
+    'receiver_phone': _customerPhoneController.text, 
+    
+    // الحقول الجديدة التي أضفناها لنظام التوصيل
+    'item_type': _itemTypeController.text,
+    'item_price': _itemPriceController.text,
+    'items_count': _itemsCountController.text, // جديد: عدد القطع
+    // الحقول الأساسية للنظام (تبقى كما هي أو تعدل حسب قاعدة بياناتك)
+    'pickup_location': _storeLocationController.text,
+    'dropoff_location': _customerAddressController.text,
+    'fare': deliveryFare.toString(), // أجور التوصيل
+    
+    'pickup_lat': storeLatLng!.latitude.toString(), 
+    'pickup_long': storeLatLng!.longitude.toString(),
+    'dropoff_lat': customerLatLng!.latitude.toString(), 
+    'dropoff_long': customerLatLng!.longitude.toString(),
+}
       );
-      if (res.statusCode == 201) {
-        _wait(json.decode(res.body)['id']);
+      if (res.statusCode == 201 && mounted) {
+        _waitMessenger(json.decode(res.body)['id']);
       }
-    } catch (e) {
-      print("Request Error: $e");
-    }
+    } catch (e) { print("Order Error: $e"); }
   }
 
-  // --- دالة الانتظار المحدثة مع طلب الحذف التلقائي ---
-  _wait(int id) {
+  _waitMessenger(int id) {
     int secondsElapsed = 0; 
     bool isDialogActive = true;
     Timer? pollingTimer;
@@ -138,13 +157,13 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       barrierDismissible: false, 
       builder: (c) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: Text("جاري البحث عن كابتن...", textAlign: TextAlign.center, style: TextStyle(color: Colors.amber)), 
+        title: Text("جاري البحث عن مندوب...", textAlign: TextAlign.center, style: TextStyle(color: Colors.orangeAccent)), 
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LinearProgressIndicator(color: Colors.amber, backgroundColor: Colors.white24),
+            LinearProgressIndicator(color: Colors.orangeAccent, backgroundColor: Colors.white24),
             SizedBox(height: 20),
-            Text("يرجى الانتظار، السائقون القريبون يتلقون طلبك", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+            Text("يتم الآن عرض طلبك على المناديب القريبين", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
           ],
         )
       )
@@ -155,74 +174,68 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
 
       if (!mounted) { t.cancel(); return; }
 
-      // 1. في حال تخطي الدقيقة: نطلب من السيرفر حذف الرحلة فوراً
       if (secondsElapsed >= 60) {
         t.cancel();
         if (isDialogActive) {
-          Navigator.of(context, rootNavigator: true).pop(); // إغلاق الديالوج
+          Navigator.of(context, rootNavigator: true).pop();
           isDialogActive = false;
         }
-        _cancelTripOnServer(id); // استدعاء API الحذف
+        _cancelOrderOnServer(id);
         return;
       }
 
-      // 2. فحص حالة الطلب من السيرفر
       try {
         final res = await http.get(
           Uri.parse("$apiBaseUrl/trips/$id"), 
           headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'}
         );
         if (res.statusCode == 200 && mounted) {
-          final tripData = json.decode(res.body);
-          if (tripData['status'] == 'accepted') {
+          final orderData = json.decode(res.body);
+          if (orderData['status'] == 'accepted') {
             t.cancel(); 
             if (isDialogActive) {
               Navigator.of(context, rootNavigator: true).pop();
               isDialogActive = false;
             }
 
+            // التعديل هنا: استخدام البارامترات المطلوبة بدقة
             Future.delayed(Duration(milliseconds: 200), () {
               if (mounted) {
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(
-                  tripId: id, 
-                  token: widget.token, 
-                  isDriver: false,
-                )));
+                Navigator.pushReplacement(
+                  context, 
+                  MaterialPageRoute(
+                    builder: (c) => ActiveDeliveryScreen(
+                      deliveryId: id,          // التعديل هنا
+                      token: widget.token,
+                      isDeliveryBoy: false,    // التعديل هنا
+                    ),
+                  ),
+                );
               }
             });
           }
         }
-      } catch (e) { print("Polling Error: $e"); }
+      } catch (e) {}
     });
   }
 
-  // دالة إبلاغ السيرفر بإلغاء الرحلة بسبب انتهاء وقت الانتظار
-  void _cancelTripOnServer(int id) async {
+  void _cancelOrderOnServer(int id) async {
     try {
-      await http.delete(
-        Uri.parse("$apiBaseUrl/trips/$id/timeout-cancel"),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Accept': 'application/json'
-        },
+      await http.delete(Uri.parse("$apiBaseUrl/trips/$id/timeout-cancel"),
+        headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
-      _showNoDriverAlert(); 
-    } catch (e) {
-      print("Delete Trip Error: $e");
-    }
+      if (mounted) _showNoMessengerAlert(); 
+    } catch (e) {}
   }
 
-  _showNoDriverAlert() {
+  _showNoMessengerAlert() {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: Colors.grey[900],
         title: Text("نعتذر منك", textAlign: TextAlign.center, style: TextStyle(color: Colors.redAccent)),
-        content: Text("لم يتم العثور على سائق متاح حالياً. تم إلغاء الطلب تلقائياً، يمكنك المحاولة مرة أخرى.", 
-          textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: Text("حسناً", style: TextStyle(color: Colors.amber)))
-        ],
+        content: Text("لا يوجد مندوب متاح حالياً لتوصيل الطلب.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text("حسناً", style: TextStyle(color: Colors.orangeAccent)))]
       )
     );
   }
@@ -232,14 +245,14 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text("بغداد تاكسي", style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)), 
+        title: Text("لوحة المتجر - طلب توصيل", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)), 
         backgroundColor: Colors.black,
         elevation: 0,
       ),
       body: Stack(children: [
         _buildMap(),
-        _buildSearchOverlay(),
-        _buildBottomCard(),
+        _buildCustomerInfoOverlay(),
+        _buildBottomStoreCard(),
       ]),
     );
   }
@@ -249,55 +262,136 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     options: MapOptions(
       initialCenter: LatLng(33.3128, 44.3615), 
       initialZoom: 13, 
-      onTap: (p, l) => _getAddressFromLatLng(l, false), 
+      onTap: (p, l) => _getAddressFromLatLng(l, false),
     ), 
     children: [
       TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
       MarkerLayer(markers: [
-        if (pickup != null) Marker(point: pickup!, child: Icon(Icons.person_pin_circle, color: Colors.blue, size: 45)),
-        if (dropoff != null) Marker(point: dropoff!, child: Icon(Icons.location_on, color: Colors.red, size: 45)),
+        if (storeLatLng != null) Marker(point: storeLatLng!, child: Icon(Icons.store, color: Colors.blue, size: 40)),
+        if (customerLatLng != null) Marker(point: customerLatLng!, child: Icon(Icons.location_on, color: Colors.red, size: 45)),
       ])
     ]
   );
 
-  Widget _buildSearchOverlay() => Positioned(
+ Widget _buildCustomerInfoOverlay() => Positioned(
     top: 10, left: 15, right: 15,
     child: Column(children: [
       Container(
-        decoration: BoxDecoration(color: Colors.black.withOpacity(0.8), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.withOpacity(0.5))),
-        child: TextField(
-          controller: _toController,
-          onChanged: _searchLocation,
-          style: TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: "إلى أين تريد الذهاب؟",
-            hintStyle: TextStyle(color: Colors.white60),
-            prefixIcon: Icon(Icons.search, color: Colors.amber),
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.all(15)
-          ),
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.9), 
+          borderRadius: BorderRadius.circular(15), 
+          border: Border.all(color: Colors.orangeAccent.withOpacity(0.5))
         ),
+        child: Column(children: [
+          // حقل اسم الزبون
+          TextField(
+            controller: _customerNameController,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "اسم الزبون", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.person, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+          Divider(color: Colors.white10, height: 1),
+
+          // حقل رقم هاتف الزبون
+          TextField(
+            controller: _customerPhoneController,
+            keyboardType: TextInputType.phone,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "رقم هاتف الزبون", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.phone, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+          Divider(color: Colors.white10, height: 1),
+
+          // حقل عنوان الزبون والبحث
+          TextField(
+            controller: _customerAddressController,
+            onChanged: _searchCustomerLocation,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "عنوان الزبون (بحث أو تحديد من الخريطة)", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.location_on, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+          Divider(color: Colors.white10, height: 1),
+
+          // حقل نوع البضاعة
+          TextField(
+            controller: _itemTypeController,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "نوع البضاعة (مثلاً: ملابس، عطور)", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.inventory_2, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+          Divider(color: Colors.white10, height: 1),
+
+          // جديد: حقل عدد القطع
+          TextField(
+            controller: _itemsCountController, // تأكد من تعريف هذا الـ Controller في الكلاس
+            keyboardType: TextInputType.number,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "عدد القطع", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.format_list_numbered, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+          Divider(color: Colors.white10, height: 1),
+
+          // حقل سعر البضاعة
+          TextField(
+            controller: _itemPriceController,
+            keyboardType: TextInputType.number,
+            style: TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "سعر البضاعة الكلي (لتحصيله من الزبون)", 
+              hintStyle: TextStyle(color: Colors.white30), 
+              prefixIcon: Icon(Icons.payments, color: Colors.orangeAccent), 
+              border: InputBorder.none
+            ),
+          ),
+        ]),
       ),
+      
       if (_suggestions.isNotEmpty)
         Container(
           margin: EdgeInsets.only(top: 5),
-          decoration: BoxDecoration(color: Colors.black.withOpacity(0.9), borderRadius: BorderRadius.circular(10)),
-          constraints: BoxConstraints(maxHeight: 200),
+          decoration: BoxDecoration(
+            color: Colors.black, 
+            borderRadius: BorderRadius.circular(10), 
+            border: Border.all(color: Colors.white10)
+          ),
+          constraints: BoxConstraints(maxHeight: 180),
           child: ListView.builder(
             shrinkWrap: true,
             itemCount: _suggestions.length,
             itemBuilder: (c, i) {
               final s = _suggestions[i];
               return ListTile(
-                title: Text(s['display_name'], style: TextStyle(fontSize: 13, color: Colors.white)),
+                dense: true,
+                title: Text(s['display_name'], style: TextStyle(fontSize: 12, color: Colors.white)),
                 onTap: () {
                   setState(() {
-                    dropoff = LatLng(double.parse(s['lat']), double.parse(s['lon']));
-                    _toController.text = s['display_name'];
+                    customerLatLng = LatLng(double.parse(s['lat']), double.parse(s['lon']));
+                    _customerAddressController.text = s['display_name'];
                     _suggestions = [];
                   });
-                  _mapController.move(dropoff!, 15);
-                  _calculateFare();
+                  _mapController.move(customerLatLng!, 15);
+                  _calculateDeliveryFare();
                 },
               );
             },
@@ -306,38 +400,33 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     ]),
   );
 
-  Widget _buildBottomCard() => Align(
+  Widget _buildBottomStoreCard() => Align(
     alignment: Alignment.bottomCenter,
     child: Container(
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.grey[900],
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)]
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
-          Icon(Icons.my_location, color: Colors.blue),
+          Icon(Icons.storefront, color: Colors.blue),
           SizedBox(width: 10),
-          Expanded(child: TextField(
-            controller: _fromController, 
-            style: TextStyle(color: Colors.white),
-            decoration: InputDecoration(hintText: "موقع الانطلاق", hintStyle: TextStyle(color: Colors.white60), border: InputBorder.none),
-          )),
-          IconButton(icon: Icon(Icons.gps_fixed, color: Colors.amber), onPressed: _setCurrentLocation)
+          Expanded(child: Text(_storeLocationController.text.isEmpty ? "جاري تحديد موقع المتجر..." : "موقعي: ${_storeLocationController.text}", 
+            style: TextStyle(color: Colors.white70, fontSize: 13), overflow: TextOverflow.ellipsis)),
+          IconButton(icon: Icon(Icons.my_location, color: Colors.orangeAccent), onPressed: _setStoreCurrentLocation)
         ]),
-        Divider(color: Colors.white10),
-        if (fare > 0) Padding(
+        if (deliveryFare > 0) Padding(
           padding: const EdgeInsets.symmetric(vertical: 10), 
-          child: Text("السعر التقديري: $fare د.ع", style: TextStyle(fontSize: 22, color: Colors.amber, fontWeight: FontWeight.bold))
+          child: Text("أجرة التوصيل: $deliveryFare د.ع", style: TextStyle(fontSize: 18, color: Colors.greenAccent, fontWeight: FontWeight.bold))
         ),
-        SizedBox(height: 10),
+        SizedBox(height: 5),
         ElevatedButton(
-          onPressed: (pickup != null && dropoff != null) ? _request : null, 
-          child: Text("اطلب الآن", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), 
+          onPressed: (customerLatLng != null) ? _sendDeliveryOrder : null, 
+          child: Text("إرسال طلب التوصيل", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), 
           style: ElevatedButton.styleFrom(
             minimumSize: Size(double.infinity, 55), 
-            backgroundColor: Colors.amber, 
+            backgroundColor: Colors.orangeAccent, 
             foregroundColor: Colors.black,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
           )

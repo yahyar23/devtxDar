@@ -264,7 +264,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         if (widget.isDriver) ...[
            SizedBox(height: 8),
            Text("المبلغ المحصل: ${fare.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.greenAccent)),
-           Text("العمولة المستقطعة (12%): ${commission.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+           Text("العمولة المستقطسسعة (12%): ${commission.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
         ],
         SizedBox(height: 15),
         ElevatedButton(
@@ -272,7 +272,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             if (!widget.isDriver) {
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(builder: (context) => CustomerDashboard(token: widget.token)),
+                MaterialPageRoute(builder: (context) => StoreDashboard(token: widget.token)),
                 (route) => false,
               );
             } else {

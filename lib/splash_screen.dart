@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_screens.dart';
-import 'captain_dashboard.dart';
+import 'delivery_dashboard.dart';
 import 'customer_dashboard.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -19,7 +19,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(Duration(seconds: 2));
     if (token != null && role != null) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => 
-        role == 'driver' ? CaptainDashboard(token: token) : CustomerDashboard(token: token)));
+        role == 'driver' ? MessengerDashboard(token: token) : StoreDashboard(token: token)));
     } else {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => WelcomeScreen()));
     }

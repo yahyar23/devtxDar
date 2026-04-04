@@ -7,22 +7,22 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'constants.dart';
-import 'active_trip_screen1.dart';
+import 'active_trip_screen1.dart'; // تأكد من تحديث اسم الملف إذا تغير لـ active_delivery_screen
 
-class CaptainDashboard extends StatefulWidget {
+class MessengerDashboard extends StatefulWidget {
   final String token;
-  CaptainDashboard({required this.token});
+  MessengerDashboard({required this.token});
 
   @override
-  _CaptainDashboardState createState() => _CaptainDashboardState();
+  _MessengerDashboardState createState() => _MessengerDashboardState();
 }
 
-class _CaptainDashboardState extends State<CaptainDashboard> {
+class _MessengerDashboardState extends State<MessengerDashboard> {
   int _currentIndex = 0;
   bool isOnline = false;
   
-  List<Map> availableTrips = [];
-  final PageController _tripPageController = PageController();
+  List<Map> availableOrders = []; // تم التغيير من Trips إلى Orders
+  final PageController _orderPageController = PageController();
 
   double balance = 0.0;
   LatLng myPos = LatLng(33.3128, 44.3615); 
@@ -38,17 +38,17 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
   @override
   void initState() {
     super.initState();
-    _checkBalance(); // جلب الرصيد فور الدخول
+    _checkBalance();
     _initLocationTracking(); 
     
     _fetchTimer = Timer.periodic(Duration(seconds: 5), (t) {
       if (mounted && isOnline) {
-        _fetchTrips();
+        _fetchOrders(); // جلب طلبات التوصيل
       }
     });
 
     _countdownTimer = Timer.periodic(Duration(seconds: 1), (t) {
-      _updateTripTimers();
+      _updateOrderTimers();
     });
   }
 
@@ -58,23 +58,21 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     _countdownTimer?.cancel();
     _positionStreamSubscription?.cancel();
     _voucherController.dispose();
-    _tripPageController.dispose();
+    _orderPageController.dispose();
     super.dispose();
   }
 
-  // --- منطق المحفظة والشحن (تم تحديث المسار والمنطق) ---
+  // --- منطق المحفظة (مسارات المندوب) ---
   
   _checkBalance() async {
     try {
-      // تم تعديل المسار هنا إلى driver/balance كما طلبت
       final res = await http.get(
-        Uri.parse("$apiBaseUrl/driver/balance"),
+        Uri.parse("$apiBaseUrl/driver/balance"), // تم التعديل لمسار المندوب
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         setState(() {
-          // جلب الرصيد سواء كان موجباً أو سالباً
           balance = double.tryParse(data['balance'].toString()) ?? 0.0;
         });
       }
@@ -83,18 +81,17 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
 
   _redeemVoucher(String code, StateSetter setDialogState) async {
     if (code.isEmpty) return;
-    
     setDialogState(() => _isRecharging = true);
     try {
       final res = await http.post(
-        Uri.parse("$apiBaseUrl/recharge"),
+        Uri.parse("$apiBaseUrl/messenger/recharge"), // تم التعديل لمسار شحن المندوب
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: json.encode({'code': code}),
       );
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        _showSnackBar("تم الشحن بنجاح! رصيدك الجديد: ${data['new_balance']} د.ع", Colors.green);
+        _showSnackBar("تم الشحن بنجاح! الرصيد الجديد: ${data['new_balance']} د.ع", Colors.green);
         _checkBalance(); 
         Navigator.pop(context);
         _voucherController.clear();
@@ -114,8 +111,8 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
       builder: (c) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: Colors.grey[900],
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.amber, width: 1)),
-          title: Text("شحن المحفظة", textAlign: TextAlign.center, style: TextStyle(color: Colors.amber)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.orangeAccent, width: 1)),
+          title: Text("شحن محفظة المندوب", textAlign: TextAlign.center, style: TextStyle(color: Colors.orangeAccent)),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               padding: EdgeInsets.all(12),
@@ -123,7 +120,7 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
               child: Column(children: [
                 Text("1. حول لزين كاش: 07713072470", style: TextStyle(color: Colors.white, fontSize: 13)),
                 SizedBox(height: 5),
-                Text("2. سيتم تزويدك بكود التعبئة فوراً", style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
+                Text("2. سيتم تزويدك بكود التعبئة فوراً", style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
               ]),
             ),
             SizedBox(height: 20),
@@ -132,19 +129,19 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: "أدخل الكود هنا",
+                hintText: "أدخل كود الشحن",
                 hintStyle: TextStyle(color: Colors.white38),
                 enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.amber), borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.orangeAccent), borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: Text("إلغاء", style: TextStyle(color: Colors.white70))),
             _isRecharging 
-              ? Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: Colors.amber))
+              ? Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: Colors.orangeAccent))
               : ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, foregroundColor: Colors.black),
                   onPressed: () => _redeemVoucher(_voucherController.text, setDialogState), 
                   child: Text("تأكيد الشحن", style: TextStyle(fontWeight: FontWeight.bold))
                 )
@@ -154,13 +151,13 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     );
   }
 
-  // --- تتبع الموقع والرحلات ---
+  // --- تتبع الموقع والطلبات ---
 
-  void _updateTripTimers() {
-    if (availableTrips.isEmpty) return;
+  void _updateOrderTimers() {
+    if (availableOrders.isEmpty) return;
     setState(() {
-      availableTrips.removeWhere((trip) {
-        DateTime createdAt = DateTime.parse(trip['received_at']);
+      availableOrders.removeWhere((order) {
+        DateTime createdAt = DateTime.parse(order['received_at']);
         return DateTime.now().difference(createdAt).inSeconds >= 20;
       });
     });
@@ -189,59 +186,38 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
 
   Future<void> _sendLocationToServer(Position pos) async {
     try {
-      await http.post(Uri.parse("$apiBaseUrl/driver/update-location"),
+      await http.post(Uri.parse("$apiBaseUrl/messenger/update-location"),
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
         body: {'lat': pos.latitude.toString(), 'lng': pos.longitude.toString(), 'heading': pos.heading.toString()},
       );
     } catch (e) { print(e); }
   }
 
-  Widget _buildCarMarker() {
+  // أيقونة مندوب (دراجة توصيل)
+  Widget _buildMessengerMarker() {
     return Transform.rotate(
       angle: _currentHeading * (3.14159 / 180),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(width: 42, height: 22, decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(4))),
-          Container(
-            width: 38, height: 18,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: Colors.grey[800]!, width: 1),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Container(width: 6, height: 12, color: Colors.blueGrey.withOpacity(0.5)),
-                Container(width: 10, height: 12, color: Colors.black),
-                Container(width: 4, height: 12, color: Colors.blueGrey.withOpacity(0.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: Icon(Icons.delivery_dining, color: Colors.orangeAccent, size: 40),
     );
   }
 
-  _fetchTrips() async {
-    // إذا كان الرصيد سالباً وبقيمة 25 ألف أو أكثر، يمنع جلب الرحلات
+  _fetchOrders() async {
     if (balance <= -25000) {
       if (isOnline) setState(() => isOnline = false);
       return;
     }
 
     try {
-      final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"),
+      final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"), // مسار الطلبات المتاحة
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
       if (res.statusCode == 200) {
         List data = json.decode(res.body);
         setState(() {
-          for (var newTrip in data) {
-            if (!availableTrips.any((t) => t['id'] == newTrip['id'])) {
-              newTrip['received_at'] = DateTime.now().toIso8601String();
-              availableTrips.add(newTrip);
+          for (var newOrder in data) {
+            if (!availableOrders.any((o) => o['id'] == newOrder['id'])) {
+              newOrder['received_at'] = DateTime.now().toIso8601String();
+              availableOrders.add(newOrder);
             }
           }
         });
@@ -249,23 +225,22 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     } catch (e) { print("Fetch Error: $e"); }
   }
 
-  _acceptTrip(Map trip) async {
-    // فحص إضافي قبل القبول
+  _acceptOrder(Map order) async {
     if (balance <= -25000) {
-      _showSnackBar("حسابك مقيد، يرجى شحن الرصيد لتجنب الحظر", Colors.red);
+      _showSnackBar("حسابك مقيد، يرجى تسديد مستحقات الشركة", Colors.red);
       return;
     }
 
     try {
-      final res = await http.post(Uri.parse("$apiBaseUrl/trips/${trip['id']}/accept"),
+      final res = await http.post(Uri.parse("$apiBaseUrl/trips/${order['id']}/accept"),
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
       if (res.statusCode == 200) {
-        setState(() => availableTrips.clear());
-        Navigator.push(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(tripId: trip['id'], token: widget.token, isDriver: true)));
+        setState(() => availableOrders.clear());
+        Navigator.push(context, MaterialPageRoute(builder: (c) => ActiveTripScreen(tripId: order['id'], token: widget.token, isDriver: true)));
       } else {
-        _showSnackBar("عذراً، لا يمكنك قبول هذه الرحلة", Colors.red);
-        setState(() { availableTrips.removeWhere((t) => t['id'] == trip['id']); });
+        _showSnackBar("عذراً، الطلب لم يعد متاحاً", Colors.red);
+        setState(() { availableOrders.removeWhere((o) => o['id'] == order['id']); });
       }
     } catch (e) { _showSnackBar("حدث خطأ في الاتصال", Colors.orange); }
   }
@@ -279,8 +254,8 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? "لوحة الكابتن" : "المحفظة"),
-        backgroundColor: Colors.black, foregroundColor: Colors.amber,
+        title: Text(_currentIndex == 0 ? "رادار التوصيل" : "محفظة المندوب"),
+        backgroundColor: Colors.black, foregroundColor: Colors.orangeAccent,
         actions: [ IconButton(icon: Icon(Icons.logout), onPressed: () => _logout()) ],
       ),
       body: IndexedStack(index: _currentIndex, children: [_buildHome(), _buildWallet()]),
@@ -292,9 +267,9 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
           setState(() => _currentIndex = i);
           if (i == 1) _checkBalance(); 
         },
-        selectedItemColor: Colors.amber,
+        selectedItemColor: Colors.orangeAccent,
         items: [
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: "الرئيسية"),
+          BottomNavigationBarItem(icon: Icon(Icons.delivery_dining), label: "الطلبات"),
           BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
         ],
       ),
@@ -307,7 +282,7 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
       options: MapOptions(initialCenter: myPos, initialZoom: 16),
       children: [
         TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-        MarkerLayer(markers: [ Marker(point: myPos, width: 60, height: 60, child: _buildCarMarker()) ])
+        MarkerLayer(markers: [ Marker(point: myPos, width: 60, height: 60, child: _buildMessengerMarker()) ])
       ]
     ),
     Positioned(top: 10, right: 10, child: Column(children: [
@@ -327,7 +302,7 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
           activeColor: Colors.green, 
           onChanged: (v) {
             if (v && balance <= -25000) {
-              _showSnackBar("لا يمكنك تفعيل الوضع المتصل، يرجى الشحن أولاً", Colors.red);
+              _showSnackBar("يرجى شحن المحفظة لتتمكن من استقبال الطلبات", Colors.red);
             } else {
               setState(() => isOnline = v);
             }
@@ -336,7 +311,6 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
       ),
     ])),
     
-    // تنبيه الرصيد في الواجهة الرئيسية
     if (balance <= -20000)
       Positioned(
         top: 70, left: 20, right: 20,
@@ -344,19 +318,17 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
           padding: EdgeInsets.all(10),
           decoration: BoxDecoration(color: Colors.red.withOpacity(0.9), borderRadius: BorderRadius.circular(10)),
           child: Text(
-            balance <= -25000 ? "حسابك محظور مؤقتاً، يرجى شحن الرصيد" : "تنبيه: رصيدك قارب على الحد الأدنى، يرجى الشحن لتجنب الحظر",
+            balance <= -25000 ? "حسابك متوقف مؤقتاً، يرجى تسديد الديون" : "تنبيه: ديون الشركة مرتفعة، يرجى الشحن لتجنب التوقف",
             style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
         ),
       ),
 
-    if (availableTrips.isNotEmpty) _buildTripsSlider(),
+    if (availableOrders.isNotEmpty) _buildOrdersSlider(),
   ]);
 
-  // --- واجهة المحفظة المحدثة ---
   Widget _buildWallet() {
-    bool isWarning = balance <= -20000;
     return Container(
       padding: EdgeInsets.all(20),
       child: Column(
@@ -366,39 +338,30 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
             padding: EdgeInsets.all(30),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: balance < 0 ? [Colors.redAccent, Colors.red[900]!] : [Colors.amber, Colors.orangeAccent]
+                colors: balance < 0 ? [Colors.redAccent, Colors.red[900]!] : [Colors.orangeAccent, Colors.deepOrange]
               ),
               borderRadius: BorderRadius.circular(25),
-              boxShadow: [BoxShadow(color: (balance < 0 ? Colors.red : Colors.amber).withOpacity(0.3), blurRadius: 15)]
+              boxShadow: [BoxShadow(color: (balance < 0 ? Colors.red : Colors.orange).withOpacity(0.3), blurRadius: 15)]
             ),
             child: Column(children: [
-              Text("رصيدك الحالي", style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text("الرصيد المتاح", style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold)),
               SizedBox(height: 10),
               Text("${balance.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.white, fontSize: 35, fontWeight: FontWeight.bold)),
               if (balance < 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
-                  child: Text("مستحقات الشركة (12%)", style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  child: Text("ديون مستحقة للشركة", style: TextStyle(color: Colors.white60, fontSize: 12)),
                 ),
             ]),
           ),
-          if (isWarning)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              child: Text(
-                "عليك الشحن لتجنب حظر حسابك (الحد الأقصى للدين: 25,000 د.ع)",
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-            ),
           SizedBox(height: 20),
           ListTile(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             tileColor: Colors.grey[900],
-            leading: Icon(Icons.add_card, color: Colors.amber),
-            title: Text("تعبئة الرصيد كود", style: TextStyle(color: Colors.white)),
-            subtitle: Text("عن طريق زين كاش", style: TextStyle(color: Colors.white38)),
-            trailing: Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 16),
+            leading: Icon(Icons.add_card, color: Colors.orangeAccent),
+            title: Text("تعبئة رصيد المندوب", style: TextStyle(color: Colors.white)),
+            subtitle: Text("عبر زين كاش", style: TextStyle(color: Colors.white38)),
+            trailing: Icon(Icons.arrow_forward_ios, color: Colors.orangeAccent, size: 16),
             onTap: _showTopUpDialog,
           ),
         ],
@@ -406,20 +369,20 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     );
   }
 
-  Widget _buildTripsSlider() => Align(
+  Widget _buildOrdersSlider() => Align(
     alignment: Alignment.bottomCenter,
     child: Container(
       height: 320, 
       child: PageView.builder(
-        controller: _tripPageController,
-        itemCount: availableTrips.length,
-        itemBuilder: (context, index) => _buildTripCard(availableTrips[index]),
+        controller: _orderPageController,
+        itemCount: availableOrders.length,
+        itemBuilder: (context, index) => _buildOrderCard(availableOrders[index]),
       ),
     ),
   );
 
-  Widget _buildTripCard(Map trip) {
-    int timeLeft = 20 - DateTime.now().difference(DateTime.parse(trip['received_at'])).inSeconds;
+  Widget _buildOrderCard(Map order) {
+    int timeLeft = 20 - DateTime.now().difference(DateTime.parse(order['received_at'])).inSeconds;
     if (timeLeft < 0) timeLeft = 0;
 
     return Container(
@@ -428,30 +391,30 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.95),
         borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.amber, width: 1.5),
+        border: Border.all(color: Colors.orangeAccent, width: 1.5),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text("طلب رحلة جديد", style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 18)),
+          Text("📦 طلب توصيل جديد", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 18)),
           CircleAvatar(radius: 16, backgroundColor: Colors.red, child: Text("$timeLeft", style: TextStyle(color: Colors.white, fontSize: 13))),
         ]),
         Divider(color: Colors.white24, height: 20),
-        _tripRow(Icons.radio_button_checked, "الانطلاق: ${trip['pickup_location']}", Colors.green),
+        _orderRow(Icons.store, "من: ${order['pickup_location']}", Colors.green),
         SizedBox(height: 8),
-        _tripRow(Icons.location_on, "الوجهة: ${trip['dropoff_location']}", Colors.red),
+        _orderRow(Icons.person_pin_circle, "إلى: ${order['dropoff_location']}", Colors.red),
         SizedBox(height: 12),
-        Text("السعر التقديري: ${trip['fare']} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 20, fontWeight: FontWeight.bold)),
+        Text("أجرة التوصيل: ${order['fare']} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 20, fontWeight: FontWeight.bold)),
         Spacer(),
         Row(children: [
-          Expanded(child: TextButton(onPressed: () => setState(() => availableTrips.remove(trip)), child: Text("تجاهل", style: TextStyle(color: Colors.white70)))),
+          Expanded(child: TextButton(onPressed: () => setState(() => availableOrders.remove(order)), child: Text("تجاهل", style: TextStyle(color: Colors.white70)))),
           SizedBox(width: 10),
           Expanded(
             child: GestureDetector(
-              onLongPress: () => _acceptTrip(trip),
+              onLongPress: () => _acceptOrder(order),
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(12)),
-                child: Center(child: Text("قبول (نقر مطول)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black))),
+                decoration: BoxDecoration(color: Colors.orangeAccent, borderRadius: BorderRadius.circular(12)),
+                child: Center(child: Text("استلام الطلب (مطول)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black))),
               ),
             ),
           ),
@@ -460,7 +423,7 @@ class _CaptainDashboardState extends State<CaptainDashboard> {
     );
   }
 
-  Widget _tripRow(IconData icon, String text, Color color) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget _orderRow(IconData icon, String text, Color color) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Icon(icon, color: color, size: 20),
     SizedBox(width: 10),
     Expanded(child: Text(text, style: TextStyle(color: Colors.white, fontSize: 14, height: 1.2), maxLines: 2, overflow: TextOverflow.ellipsis)),
