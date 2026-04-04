@@ -131,7 +131,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
-  // --- دوال الاتصال والملاحة الخارجية ---
   _makeCall(String phone) async {
     final Uri url = Uri.parse("tel:$phone");
     if (await canLaunchUrl(url)) await launchUrl(url);
@@ -157,7 +156,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isDriver ? "تتبع الزبون والملاحة" : "تتبع وصول الكابتن"),
+        title: Text(widget.isDriver ? "تتبع الزبون والملاحة" : "تتبع وصول المندوب"),
         backgroundColor: Colors.black, foregroundColor: Colors.amber,
         elevation: 0,
       ),
@@ -201,7 +200,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(radius: 25, backgroundColor: Colors.amber, child: Icon(Icons.person, color: Colors.black)),
               title: Text(
-                widget.isDriver ? "الزبون: ${trip!['customer']?['name'] ?? '...'}" : "الكابتن: ${trip!['driver']?['name'] ?? '...'}",
+                widget.isDriver ? "الزبون: ${trip!['customer']?['name'] ?? '...'}" : "المندوب: ${trip!['driver']?['name'] ?? '...'}",
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
               ),
               subtitle: Text(
@@ -248,10 +247,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     );
   }
 
-  // واجهة عرض تفاصيل إتمام الرحلة
   Widget _buildCompletionCard() {
-    double fare = double.tryParse(trip!['fare'].toString()) ?? 0.0;
-    double commission = fare * 0.12;
+    // تم التعديل لاستخدام item_price بدلاً من fare
+    double itemPrice = double.tryParse(trip!['item_price'].toString()) ?? 0.0;
     
     return Container(
       width: double.infinity,
@@ -263,8 +261,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         Text("تم إتمام الرحلة بنجاح", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         if (widget.isDriver) ...[
            SizedBox(height: 8),
-           Text("المبلغ المحصل: ${fare.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.greenAccent)),
-           Text("العمولة المستقطسسعة (12%): ${commission.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+           // عرض سعر البضاعة (item_price) كـ "مبلغ محصل"
+           Text("المبلغ المحصل: ${itemPrice.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
         ],
         SizedBox(height: 15),
         ElevatedButton(
@@ -276,7 +274,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                 (route) => false,
               );
             } else {
-              Navigator.pop(context); // العودة للوحة الكابتن وتحديث الرصيد هناك
+              Navigator.pop(context); 
             }
           },
           child: Text("العودة للرئيسية"),
@@ -293,8 +291,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   String _getStatusArabic(String s) {
     switch (s) {
-      case "accepted": return "الكابتن في طريقه إليك";
-      case "arrived": return "الكابتن وصل للموقع";
+      case "accepted": return "المندوب في طريقه إليك";
+      case "arrived": return "المندوب وصل للموقع";
       case "ongoing": return "الرحلة مستمرة الآن";
       case "completed": return "وصلت بالسلامة";
       case "cancelled": return "الرحلة ملغاة";
@@ -312,14 +310,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Widget _actionBtn(String txt, String nextStatus, {Color color = Colors.amber}) {
     return ElevatedButton(
       onPressed: () async {
-        // عند إنهاء الرحلة، نرسل الطلب لمسار الإغلاق مع المبلغ
         String urlPath = nextStatus == "completed" ? "finish" : "status";
         try {
           Map<String, dynamic> bodyData = {'status': nextStatus};
           
-          // إذا كانت الحالة "إكمال"، نرسل الأجرة ليقوم السيرفر بحساب الـ 12%
           if (nextStatus == "completed") {
-            bodyData['fare'] = trip!['fare']; 
+            // نرسل item_price للسيرفر بدلاً من fare عند إنهاء الرحلة
+            bodyData['item_price'] = trip!['item_price']; 
           }
 
           final res = await http.post(
@@ -333,10 +330,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           );
           
           if (res.statusCode == 200) {
-            _fetch(); // تحديث الحالة في الواجهة
+            _fetch(); 
             if (nextStatus == "completed") {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("تم إنهاء الرحلة وخصم العمولة من رصيدك"))
+                SnackBar(content: Text("تم إنهاء الرحلة بنجاح"))
               );
             }
           }
@@ -352,7 +349,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     );
   }
 
-  // ويدجت السيارة المتحركة على الخريطة
   Widget _buildMovingCarMarker() {
     return Transform.rotate(
       angle: _currentHeading * (3.14159 / 180),
@@ -370,7 +366,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                 border: Border.all(color: Colors.grey[800]!, width: 0.5),
               ),
             ),
-            // تفاصيل تصميم السيارة الصغيرة
             Positioned(top: 10, child: Container(width: 16, height: 8, decoration: BoxDecoration(color: Colors.blueGrey.withOpacity(0.6), borderRadius: BorderRadius.circular(2)))),
           ],
         ),

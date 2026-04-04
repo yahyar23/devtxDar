@@ -6,7 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'constants.dart';
-import 'active_delivery_screen.dart'; 
+import 'active_trip_screen1.dart'; 
 
 class StoreDashboard extends StatefulWidget {
   final String token;
@@ -204,10 +204,10 @@ class _StoreDashboardState extends State<StoreDashboard> {
                 Navigator.pushReplacement(
                   context, 
                   MaterialPageRoute(
-                    builder: (c) => ActiveDeliveryScreen(
-                      deliveryId: id,          // التعديل هنا
+                    builder: (c) => ActiveTripScreen(
+                      tripId: id,          // التعديل هنا
                       token: widget.token,
-                      isDeliveryBoy: false,    // التعديل هنا
+                      isDriver: false,    // التعديل هنا
                     ),
                   ),
                 );
@@ -416,10 +416,11 @@ class _StoreDashboardState extends State<StoreDashboard> {
             style: TextStyle(color: Colors.white70, fontSize: 13), overflow: TextOverflow.ellipsis)),
           IconButton(icon: Icon(Icons.my_location, color: Colors.orangeAccent), onPressed: _setStoreCurrentLocation)
         ]),
-        if (deliveryFare > 0) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10), 
-          child: Text("أجرة التوصيل: $deliveryFare د.ع", style: TextStyle(fontSize: 18, color: Colors.greenAccent, fontWeight: FontWeight.bold))
-        ),
+        // if (deliveryFare > 0) Padding(
+        //   padding: const EdgeInsets.symmetric(vertical: 10), 
+        //   child: Text("أجرة التوصيل: $deliveryFare د.ع", style: TextStyle(fontSize: 18, color: const Color.fromARGB(255, 0, 0, 0), fontWeight: FontWeight.bold))
+        // ),
+        
         SizedBox(height: 5),
         ElevatedButton(
           onPressed: (customerLatLng != null) ? _sendDeliveryOrder : null, 

@@ -7,7 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'constants.dart';
-import 'active_trip_screen1.dart'; // تأكد من تحديث اسم الملف إذا تغير لـ active_delivery_screen
+import 'active_trip_screen1.dart'; 
 
 class MessengerDashboard extends StatefulWidget {
   final String token;
@@ -21,7 +21,7 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
   int _currentIndex = 0;
   bool isOnline = false;
   
-  List<Map> availableOrders = []; // تم التغيير من Trips إلى Orders
+  List<Map> availableOrders = []; 
   final PageController _orderPageController = PageController();
 
   double balance = 0.0;
@@ -43,7 +43,7 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     
     _fetchTimer = Timer.periodic(Duration(seconds: 5), (t) {
       if (mounted && isOnline) {
-        _fetchOrders(); // جلب طلبات التوصيل
+        _fetchOrders(); 
       }
     });
 
@@ -62,12 +62,10 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     super.dispose();
   }
 
-  // --- منطق المحفظة (مسارات المندوب) ---
-  
   _checkBalance() async {
     try {
       final res = await http.get(
-        Uri.parse("$apiBaseUrl/driver/balance"), // تم التعديل لمسار المندوب
+        Uri.parse("$apiBaseUrl/driver/balance"),
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
       if (res.statusCode == 200) {
@@ -84,7 +82,7 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     setDialogState(() => _isRecharging = true);
     try {
       final res = await http.post(
-        Uri.parse("$apiBaseUrl/messenger/recharge"), // تم التعديل لمسار شحن المندوب
+        Uri.parse("$apiBaseUrl/recharge"),
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: json.encode({'code': code}),
       );
@@ -151,8 +149,6 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     );
   }
 
-  // --- تتبع الموقع والطلبات ---
-
   void _updateOrderTimers() {
     if (availableOrders.isEmpty) return;
     setState(() {
@@ -193,7 +189,6 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     } catch (e) { print(e); }
   }
 
-  // أيقونة مندوب (دراجة توصيل)
   Widget _buildMessengerMarker() {
     return Transform.rotate(
       angle: _currentHeading * (3.14159 / 180),
@@ -208,7 +203,7 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
     }
 
     try {
-      final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"), // مسار الطلبات المتاحة
+      final res = await http.get(Uri.parse("$apiBaseUrl/trips/available"),
         headers: {'Authorization': 'Bearer ${widget.token}', 'Accept': 'application/json'},
       );
       if (res.statusCode == 200) {
@@ -372,7 +367,7 @@ class _MessengerDashboardState extends State<MessengerDashboard> {
 Widget _buildOrdersSlider() => Align(
     alignment: Alignment.bottomCenter,
     child: Container(
-      height: 400, // زدنا الارتفاع هنا لتجنب الشريط الأصفر
+      height: 400, 
       child: PageView.builder(
         controller: _orderPageController,
         itemCount: availableOrders.length,
@@ -380,24 +375,26 @@ Widget _buildOrdersSlider() => Align(
       ),
     ),
   );
+
 Widget _buildOrderCard(Map order) {
   int timeLeft = 20 - DateTime.now().difference(DateTime.parse(order['received_at'])).inSeconds;
   if (timeLeft < 0) timeLeft = 0;
 
+  // الحساب يعتمد الآن كلياً على item_price
+  double totalToCollect = double.tryParse(order['item_price'].toString()) ?? 0.0;
+
   return Container(
-    // رفعنا الكارد 40 بكسل عن الأسفل مع ضمان عدم تجاوزه للمساحة المتاحة
     margin: EdgeInsets.only(left: 10, right: 10, bottom: 40, top: 5), 
     padding: EdgeInsets.all(15),
     decoration: BoxDecoration(
-      color: Color(0xFF121212), // أسود عميق
+      color: Color(0xFF121212),
       borderRadius: BorderRadius.circular(20),
       border: Border.all(color: Colors.orangeAccent.withOpacity(0.8), width: 1.2),
       boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 10)],
     ),
     child: Column(
-      mainAxisSize: MainAxisSize.min, // مهم جداً لعدم التمدد الزائد
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // العنوان والوقت
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -407,14 +404,12 @@ Widget _buildOrderCard(Map order) {
         ),
         SizedBox(height: 10),
         
-        // المواقع (تصميم سطر واحد لكل موقع لتقليل الطول)
         _orderRow(Icons.store, "من: ${order['pickup_location']}", Colors.green,),
         SizedBox(height: 4),
         _orderRow(Icons.location_on, "إلى: ${order['dropoff_location']}", Colors.redAccent,),
         
         Divider(color: Colors.white12, height: 15),
 
-        // تفاصيل الشحنة (تصميم مدمج جداً)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -423,32 +418,29 @@ Widget _buildOrderCard(Map order) {
               Text("${order['item_type']} (${order['items_count']})", style: TextStyle(color: Colors.white, fontSize: 12)),
             ]),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text("المطلوب تحصيله", style: TextStyle(color: Colors.white54, fontSize: 10)),
-              Text("${order['item_price']} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+              Text("المطلوب تحصيله من الزبون", style: TextStyle(color: Colors.white54, fontSize: 10)),
+              Text("${totalToCollect.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.greenAccent, fontSize: 16, fontWeight: FontWeight.bold)),
             ]),
           ],
         ),
 
         SizedBox(height: 15),
 
-        // الأزرار والأجرة
         Row(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("ربحك", style: TextStyle(color: Colors.white54, fontSize: 10)),
-                Text("${order['fare']} د.ع", style: TextStyle(color: Colors.orangeAccent, fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
+            // تم إخفاء قسم "fare" (الربح سابقاً) ليكون التركيز على item_price
+            Visibility(
+              visible: false, 
+              maintainSize: false,
+              child: Container(),
             ),
+            
             Spacer(),
-            // زر التجاهل
             TextButton(
               onPressed: () => setState(() => availableOrders.remove(order)),
               child: Text("تجاهل", style: TextStyle(color: Colors.white38, fontSize: 12)),
             ),
             SizedBox(width: 8),
-            // زر القبول
             GestureDetector(
               onLongPress: () {
                 Feedback.forLongPress(context);

@@ -7,12 +7,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'constants.dart';
-import 'customer_dashboard.dart'; 
 
 class ActiveDeliveryScreen extends StatefulWidget {
-  final int deliveryId; // تم تغيير المسمى من رحلة إلى توصيل
+  final int deliveryId; 
   final String token;
-  final bool isDeliveryBoy; // هل المستخدم هو مندوب التوصيل؟
+  final bool isDeliveryBoy; 
 
   ActiveDeliveryScreen({required this.deliveryId, required this.token, required this.isDeliveryBoy});
 
@@ -51,7 +50,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     super.dispose();
   }
 
-  // تتبع موقع المندوب وإرساله للسيرفر
   void _startLiveLocationTracking() async {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -59,7 +57,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     }
 
     Timer.periodic(Duration(seconds: 5), (t) async {
-      if (status == 'delivered' || status == 'cancelled' || !mounted) {
+      if (status == 'completed' || status == 'cancelled' || !mounted) {
         t.cancel();
         return;
       }
@@ -70,7 +68,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
         );
 
         await http.post(
-          Uri.parse("$apiBaseUrl/messenger/update-location"),
+          Uri.parse("$apiBaseUrl/driver/update-location"),
           headers: {
             'Authorization': 'Bearer ${widget.token}',
             'Content-Type': 'application/json',
@@ -113,19 +111,16 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
 
             if (lat != null && lng != null) {
               messengerPos = LatLng(lat, lng);
-              
               if (!widget.isDeliveryBoy && status == "accepted") {
                 try {
                   _mapController.move(messengerPos!, 16.0);
-                } catch (e) {
-                  print("خريطة التتبع غير جاهزة بعد");
-                }
+                } catch (e) {}
               }
             }
           }
         });
         
-        if (status == 'delivered' || status == 'cancelled') _timer?.cancel();
+        if (status == 'completed' || status == 'cancelled') _timer?.cancel();
       }
     } catch (e) {
       print("خطأ في جلب بيانات الطلب: $e");
@@ -141,8 +136,6 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
     final Uri url = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
     if (await canLaunchUrl(url)) {
       await launchUrl(url);
-    } else {
-      await launchUrl(Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng"), mode: LaunchMode.externalApplication);
     }
   }
 
@@ -150,17 +143,27 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   Widget build(BuildContext context) {
     if (order == null) return Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Colors.orange)));
 
-    // إحداثيات المتجر (Pickup) وإحداثيات العميل (Dropoff)
     double sLat = double.tryParse(order!['store_lat'].toString()) ?? 33.3128;
     double sLng = double.tryParse(order!['store_long'].toString()) ?? 44.3615;
     double cLat = double.tryParse(order!['customer_lat'].toString()) ?? 33.3128;
     double cLng = double.tryParse(order!['customer_long'].toString()) ?? 44.3615;
+
+    // جلب سعر البضاعة الأصلي بدون خصومات أو حساب مسافات
+    String itemPrice = order!['price']?.toString() ?? "0";
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isDeliveryBoy ? "تتبع مسار التوصيل" : "تتبع وصول طلبك"),
         backgroundColor: Colors.black, foregroundColor: Colors.orange,
         elevation: 0,
+        actions: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15),
+              child: Text("المبلغ: $itemPrice د.ع", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+          )
+        ],
       ),
       body: Stack(children: [
         FlutterMap(
@@ -172,8 +175,8 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
           children: [
             TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
             MarkerLayer(markers: [
-              Marker(point: LatLng(sLat, sLng), child: Icon(Icons.store, color: Colors.blue, size: 40)), // أيقونة المتجر
-              Marker(point: LatLng(cLat, cLng), child: Icon(Icons.home, color: Colors.red, size: 40)), // أيقونة منزل العميل
+              Marker(point: LatLng(sLat, sLng), child: Icon(Icons.store, color: Colors.blue, size: 40)), 
+              Marker(point: LatLng(cLat, cLng), child: Icon(Icons.home, color: Colors.red, size: 40)), 
               if (messengerPos != null)
                 Marker(
                   point: messengerPos!, 
@@ -198,50 +201,52 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
               child: Text(_getStatusArabic(status), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
             ),
             
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(radius: 25, backgroundColor: Colors.orange, child: Icon(widget.isDeliveryBoy ? Icons.person : Icons.delivery_dining, color: Colors.black)),
-              title: Text(
-                widget.isDeliveryBoy ? "العميل: ${order!['customer']?['name'] ?? '...'}" : "المندوب: ${order!['messenger']?['name'] ?? '...'}",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)
-              ),
-              subtitle: Text(
-                widget.isDeliveryBoy ? "العنوان: ${order!['delivery_address']}" : "طلبك في الطريق إليك",
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-              ),
-              trailing: IconButton(
-                icon: CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.phone, color: Colors.white, size: 20)),
-                onPressed: () {
-                  var target = widget.isDeliveryBoy ? order!['customer'] : order!['messenger'];
-                  if (target != null && target['phone'] != null) {
-                    _makeCall(target['phone'].toString());
-                  }
-                },
-              ),
-            ),
-
-            Divider(color: Colors.white12),
-
-            if (widget.isDeliveryBoy && status != 'delivered') ...[
-              ElevatedButton.icon(
-                onPressed: () => _openInExternalMaps(
-                  (status == "accepted" || status == "at_store") ? sLat : cLat,
-                  (status == "accepted" || status == "at_store") ? sLng : cLng,
+            if (status == "completed" || status == "cancelled") ...[
+               const SizedBox(height: 15),
+               _buildDeliverySummary() // هذا يظهر للجميع عند الانتهاء
+            ] else ...[
+               ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(radius: 25, backgroundColor: Colors.orange, child: Icon(widget.isDeliveryBoy ? Icons.person : Icons.delivery_dining, color: Colors.black)),
+                title: Text(
+                  widget.isDeliveryBoy ? "العميل: ${order!['customer']?['name'] ?? '...'}" : "المندوب: ${order!['messenger']?['name'] ?? '...'}",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)
                 ),
-                icon: Icon(Icons.directions, color: Colors.white),
-                label: Text(status == "shipping" ? "التوجه لمنزل العميل" : "التوجه للمتجر"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent, 
-                  foregroundColor: Colors.white, 
-                  minimumSize: Size(double.infinity, 48), 
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                subtitle: Text(
+                  "مبلغ البضاعة: $itemPrice د.ع",
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                trailing: IconButton(
+                  icon: CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.phone, color: Colors.white, size: 20)),
+                  onPressed: () {
+                    var target = widget.isDeliveryBoy ? order!['customer'] : order!['messenger'];
+                    if (target != null && target['phone'] != null) {
+                      _makeCall(target['phone'].toString());
+                    }
+                  },
                 ),
               ),
-              SizedBox(height: 10),
-              _buildMessengerActions(),
-            ] else if (status == "delivered") ...[
-               _buildDeliverySummary()
+
+              Divider(color: Colors.white12),
+
+              if (widget.isDeliveryBoy) ...[
+                ElevatedButton.icon(
+                  onPressed: () => _openInExternalMaps(
+                    (status == "accepted" || status == "arrived") ? sLat : cLat,
+                    (status == "accepted" || status == "arrived") ? sLng : cLng,
+                  ),
+                  icon: Icon(Icons.directions, color: Colors.white),
+                  label: Text(status == "ongoing" ? "التوجه لمنزل العميل" : "التوجه للمتجر"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent, 
+                    foregroundColor: Colors.white, 
+                    minimumSize: Size(double.infinity, 48), 
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                ),
+                SizedBox(height: 10),
+                _buildMessengerActions(),
+              ]
             ]
           ]),
         ))
@@ -250,42 +255,59 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   }
 
   Widget _buildDeliverySummary() {
-    double deliveryFee = double.tryParse(order!['delivery_fee'].toString()) ?? 0.0;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(15)),
-      child: Column(children: [
-        Icon(Icons.check_circle_outline, color: Colors.green, size: 45),
-        SizedBox(height: 8),
-        Text("تم التوصيل بنجاح", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        if (widget.isDeliveryBoy) ...[
-           Text("أجور التوصيل: ${deliveryFee.toStringAsFixed(0)} د.ع", style: TextStyle(color: Colors.orangeAccent)),
-        ],
-        SizedBox(height: 12),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text("إغلاق الواجهة", style: TextStyle(color: Colors.orange)),
-        )
-      ]),
-    );
-  }
+  return Container(
+    width: double.infinity,
+    padding: EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: Colors.white10, 
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: status == 'cancelled' ? Colors.red : Colors.green)
+    ),
+    child: Column(children: [
+      Icon(
+        status == 'cancelled' ? Icons.cancel_outlined : Icons.check_circle_outline, 
+        color: status == 'cancelled' ? Colors.red : Colors.green, 
+        size: 45
+      ),
+      SizedBox(height: 8),
+      Text(
+        status == 'cancelled' ? "تم إلغاء هذا الطلب" : "تم التوصيل بنجاح", 
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+      ),
+      SizedBox(height: 20),
+      
+      ElevatedButton(
+        onPressed: () {
+          // العودة للوحة التحكم (الرئيسية)
+          Navigator.pushNamedAndRemoveUntil(context, '/store_dashboard', (route) => false);
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.orange,
+          foregroundColor: Colors.black,
+          minimumSize: Size(double.infinity, 45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+        ),
+        child: Text("العودة للقائمة الرئيسية", style: TextStyle(fontWeight: FontWeight.bold)),
+      )
+    ]),
+  );
+}
 
   String _getStatusArabic(String s) {
     switch (s) {
       case "accepted": return "المندوب يتوجه للمتجر";
-      case "at_store": return "المندوب في المتجر لاستلام الطلب";
-      case "shipping": return "جاري توصيل الطلب إليك";
-      case "delivered": return "تم استلام الطلب";
+      case "arrived": return "المندوب في المتجر لاستلام الطلب";
+      case "ongoing": return "جاري توصيل الطلب إليك";
+      case "completed": return "تم استلام الطلب";
       case "cancelled": return "تم إلغاء الطلب";
       default: return "جاري التحديث...";
     }
   }
 
   Widget _buildMessengerActions() {
-    if (status == "accepted") return _actionBtn("وصلت للمتجر", "at_store");
-    if (status == "at_store") return _actionBtn("استلمت الطلب وبدأت التوصيل", "shipping", color: Colors.blue);
-    if (status == "shipping") return _actionBtn("تم تسليم الطلب للعميل", "delivered", color: Colors.green);
+    if (status == "accepted") return _actionBtn("وصلت للمتجر", "arrived");
+    if (status == "arrived") return _actionBtn("استلمت الطلب وبدأت التوصيل", "ongoing", color: Colors.blue);
+    if (status == "ongoing") return _actionBtn("تم تسليم الطلب للعميل", "completed", color: Colors.green);
     return Container();
   }
 
@@ -321,9 +343,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
   Widget _buildMessengerMarker() {
     return Transform.rotate(
       angle: _currentHeading * (3.14159 / 180),
-      child: Container(
-        child: Icon(Icons.delivery_dining, color: Colors.orange, size: 40),
-      ),
+      child: Icon(Icons.delivery_dining, color: Colors.orange, size: 40),
     );
   }
 }
